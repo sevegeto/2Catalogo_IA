@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   ArrowLeft,
   Check,
@@ -22,7 +23,7 @@ import {
 } from '@/components/layout/status-badges';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { matchService } from '@/lib/services';
+import { matchService, matchMutations } from '@/lib/services';
 import type { ProductMatch } from '@/types';
 
 interface PageProps {
@@ -65,8 +66,10 @@ function CompareRow({
 }
 
 export default function MatchDetailPage({ params }: PageProps) {
+  const router = useRouter();
   const [match, setMatch] = useState<ProductMatch | null>(null);
   const [loading, setLoading] = useState(true);
+  const [acting, setActing] = useState(false);
 
   useEffect(() => {
     matchService.getMatch(params.id).then((m) => {
@@ -74,6 +77,23 @@ export default function MatchDetailPage({ params }: PageProps) {
       setLoading(false);
     });
   }, [params.id]);
+
+  const handleAction = async (
+    decision: ProductMatch['decision'],
+    linkProduct: boolean = false,
+  ) => {
+    if (!match) return;
+    setActing(true);
+    try {
+      await matchMutations.updateDecision(match.id, decision);
+      if (linkProduct && match.candidateProductId) {
+        await matchMutations.linkCaptureToProduct(match.captureId, match.candidateProductId, match.candidateVariantId);
+      }
+      router.push('/matches');
+    } catch {
+      setActing(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -102,6 +122,8 @@ export default function MatchDetailPage({ params }: PageProps) {
     );
   }
 
+  const isPending = match.decision === 'PENDING';
+
   return (
     <AppShell>
       <PageHeader
@@ -118,7 +140,6 @@ export default function MatchDetailPage({ params }: PageProps) {
       />
 
       <div className="space-y-6 p-6">
-        {/* Summary bar */}
         <div className="flex flex-wrap items-center gap-4 rounded-lg border p-4">
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">Confianza:</span>
@@ -142,7 +163,6 @@ export default function MatchDetailPage({ params }: PageProps) {
           )}
         </div>
 
-        {/* Side-by-side comparison */}
         <Card>
           <CardHeader>
             <CardTitle className="text-sm">Comparacion lado a lado</CardTitle>
@@ -154,7 +174,6 @@ export default function MatchDetailPage({ params }: PageProps) {
               <span className="text-xs font-bold">Candidato</span>
             </div>
 
-            {/* Images row */}
             <div className="grid grid-cols-[180px_1fr_1fr] gap-2 border-b py-3">
               <span className="text-xs font-medium text-muted-foreground">
                 Imagen
@@ -183,40 +202,17 @@ export default function MatchDetailPage({ params }: PageProps) {
               </div>
             </div>
 
-            <CompareRow
-              label="Titulo"
-              captureValue={match.captureTitle}
-              candidateValue={match.candidateTitle}
-            />
-            <CompareRow
-              label="Marca"
-              captureValue={match.captureBrand}
-              candidateValue={match.candidateBrand}
-            />
-            <CompareRow
-              label="Modelo"
-              captureValue={match.captureModel}
-              candidateValue={match.candidateModel}
-            />
-            <CompareRow
-              label="UPC"
-              captureValue={match.captureUpc}
-              candidateValue={match.candidateUpc}
-            />
-            <CompareRow
-              label="Dominio origen"
-              captureValue={match.captureSourceDomain}
-              candidateValue={null}
-            />
+            <CompareRow label="Titulo" captureValue={match.captureTitle} candidateValue={match.candidateTitle} />
+            <CompareRow label="Marca" captureValue={match.captureBrand} candidateValue={match.candidateBrand} />
+            <CompareRow label="Modelo" captureValue={match.captureModel} candidateValue={match.candidateModel} />
+            <CompareRow label="UPC" captureValue={match.captureUpc} candidateValue={match.candidateUpc} />
+            <CompareRow label="Dominio origen" captureValue={match.captureSourceDomain} candidateValue={null} />
           </CardContent>
         </Card>
 
-        {/* Score breakdown */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">
-              Desglose de puntuacion
-            </CardTitle>
+            <CardTitle className="text-sm">Desglose de puntuacion</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
@@ -249,7 +245,6 @@ export default function MatchDetailPage({ params }: PageProps) {
           </CardContent>
         </Card>
 
-        {/* Evidence, conflicts, missing fields */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <Card>
             <CardHeader>
@@ -303,9 +298,7 @@ export default function MatchDetailPage({ params }: PageProps) {
             </CardHeader>
             <CardContent>
               {match.missingFields.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No faltan campos.
-                </p>
+                <p className="text-sm text-muted-foreground">No faltan campos.</p>
               ) : (
                 <ul className="space-y-1.5 text-sm">
                   {match.missingFields.map((f, i) => (
@@ -320,34 +313,68 @@ export default function MatchDetailPage({ params }: PageProps) {
           </Card>
         </div>
 
-        {/* Actions */}
         <div className="flex flex-wrap items-center gap-2 rounded-lg border p-4">
           <span className="text-sm font-medium mr-2">Acciones:</span>
-          <Button size="sm" variant="default">
+          <Button
+            size="sm"
+            variant="default"
+            disabled={acting || !isPending}
+            onClick={() => handleAction('HUMAN_APPROVED', true)}
+          >
             <Check className="mr-1.5 h-4 w-4" />
             Confirmar mismo producto
           </Button>
-          <Button size="sm" variant="outline">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={acting || !isPending}
+            onClick={() => handleAction('HUMAN_APPROVED', true)}
+          >
             <GitMerge className="mr-1.5 h-4 w-4" />
             Confirmar misma variante
           </Button>
-          <Button size="sm" variant="outline">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={acting || !isPending}
+            onClick={() => handleAction('NEEDS_MORE_INFORMATION')}
+          >
             <PackagePlus className="mr-1.5 h-4 w-4" />
             Crear variante nueva
           </Button>
-          <Button size="sm" variant="outline">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={acting || !isPending}
+            onClick={() => handleAction('NEEDS_MORE_INFORMATION')}
+          >
             <PackagePlus className="mr-1.5 h-4 w-4" />
             Crear producto nuevo
           </Button>
-          <Button size="sm" variant="outline">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={acting || !isPending}
+            onClick={() => handleAction('NOT_SAME_PRODUCT')}
+          >
             <X className="mr-1.5 h-4 w-4" />
             No son iguales
           </Button>
-          <Button size="sm" variant="outline">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={acting || !isPending}
+            onClick={() => handleAction('NEEDS_MORE_INFORMATION')}
+          >
             <Cpu className="mr-1.5 h-4 w-4" />
             Solicitar analisis IA
           </Button>
-          <Button size="sm" variant="ghost">
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={acting || !isPending}
+            onClick={() => handleAction('PENDING')}
+          >
             <Clock className="mr-1.5 h-4 w-4" />
             Posponer
           </Button>

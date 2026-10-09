@@ -1,8 +1,12 @@
 'use client';
 
+import { useState } from 'react';
+import { Save, Check } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
+import { productMutations } from '@/lib/services';
 import type { Product } from '@/types';
 
 interface Props {
@@ -10,11 +14,44 @@ interface Props {
 }
 
 export function ProductContentTab({ product }: Props) {
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    const title = (document.querySelector('[data-field="contentTitleMaster"]') as HTMLTextAreaElement)?.value;
+    const desc = (document.querySelector('[data-field="contentDescriptionMaster"]') as HTMLTextAreaElement)?.value;
+    try {
+      await productMutations.updateProduct(product.id, {
+        titleMaster: title ?? undefined,
+        descriptionMaster: desc ?? undefined,
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch {
+      setSaving(false);
+    }
+    setSaving(false);
+  };
+
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader>
+        <CardHeader className="flex-row items-center justify-between space-y-0">
           <CardTitle className="text-sm">Contenido maestro</CardTitle>
+          <Button size="sm" variant="outline" onClick={handleSave} disabled={saving}>
+            {saved ? (
+              <>
+                <Check className="mr-1.5 h-4 w-4" />
+                Guardado
+              </>
+            ) : (
+              <>
+                <Save className="mr-1.5 h-4 w-4" />
+                Guardar
+              </>
+            )}
+          </Button>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-1.5">
@@ -25,6 +62,7 @@ export function ProductContentTab({ product }: Props) {
               defaultValue={product.titleMaster}
               rows={2}
               className="resize-none"
+              data-field="contentTitleMaster"
             />
           </div>
           <div className="space-y-1.5">
@@ -35,6 +73,7 @@ export function ProductContentTab({ product }: Props) {
               defaultValue={product.descriptionMaster}
               rows={6}
               className="resize-none"
+              data-field="contentDescriptionMaster"
             />
           </div>
         </CardContent>
@@ -43,7 +82,7 @@ export function ProductContentTab({ product }: Props) {
       <Card>
         <CardHeader>
           <CardTitle className="text-sm">
-            Contenido por canal (demo)
+            Contenido por canal
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">

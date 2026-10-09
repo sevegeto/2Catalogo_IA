@@ -884,3 +884,70 @@ export const imageGlobalService = {
     if (error) throw error;
   },
 };
+
+// ---- Match Mutations ----
+
+export const matchMutations = {
+  async updateDecision(
+    id: string,
+    decision: ProductMatch['decision'],
+    decisionSource: 'HUMAN' = 'HUMAN',
+  ): Promise<void> {
+    if (isDemoMode()) {
+      await delay();
+      const m = mockMatches.find((x) => x.id === id);
+      if (m) { m.decision = decision; m.decisionSource = decisionSource; m.reviewedBy = 'user'; m.reviewedAt = new Date().toISOString(); }
+      return;
+    }
+    const { error } = await supabase.from('product_matches').update({
+      decision,
+      decision_source: decisionSource,
+      reviewed_by: 'user',
+      reviewed_at: new Date().toISOString(),
+    }).eq('id', id);
+    if (error) throw error;
+  },
+
+  async linkCaptureToProduct(
+    captureId: string,
+    productId: string,
+    variantId: string | null,
+  ): Promise<void> {
+    if (isDemoMode()) {
+      await delay();
+      const c = mockCaptures.find((x) => x.id === captureId);
+      if (c) { c.assignedProductId = productId; c.assignedVariantId = variantId; c.status = 'MATCHED'; }
+      return;
+    }
+    const { error: capErr } = await supabase.from('captures').update({
+      assigned_product_id: productId,
+      assigned_variant_id: variantId,
+      status: 'MATCHED',
+      processed_at: new Date().toISOString(),
+    }).eq('id', captureId);
+    if (capErr) throw capErr;
+  },
+};
+
+// ---- Image Mutations (per-product) ----
+
+export const imageMutations = {
+  async approveImage(id: string): Promise<void> {
+    if (isDemoMode()) { await delay(); return; }
+    const { error } = await supabase.from('product_images').update({ approved: true, updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) throw error;
+  },
+
+  async rejectImage(id: string): Promise<void> {
+    if (isDemoMode()) { await delay(); return; }
+    const { error } = await supabase.from('product_images').update({ status: 'REJECTED', updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) throw error;
+  },
+
+  async setMainImage(id: string, productId: string): Promise<void> {
+    if (isDemoMode()) { await delay(); return; }
+    await supabase.from('product_images').update({ image_type: 'ALTERNATE' }).eq('product_id', productId).eq('image_type', 'MAIN');
+    const { error } = await supabase.from('product_images').update({ image_type: 'MAIN', updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) throw error;
+  },
+};
