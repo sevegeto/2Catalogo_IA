@@ -1052,9 +1052,17 @@ export const integrationService = {
           return { success: false, message: body.error || `HTTP ${response.status}` };
         }
         const data = await response.json();
-        return { success: true, message: data.message || `Conexion exitosa a ${host}:${port}` };
-      } catch {
-        return { success: false, message: `No se pudo conectar a ${host}:${port}` };
+        if (data.success) {
+          await this.update(id, { enabled: true });
+          return { success: true, message: data.message || `Conexion exitosa a ${host}:${port}` };
+        }
+        const errMsg = data.error || `No se pudo conectar a ${host}:${port}`;
+        await this.updateError(id, errMsg);
+        return { success: false, message: errMsg };
+      } catch (_e) {
+        const errMsg = `No se pudo conectar a ${host}:${port}. Verifica que el host sea accesible desde internet.`;
+        await this.updateError(id, errMsg);
+        return { success: false, message: errMsg };
       }
     }
 
@@ -1063,5 +1071,14 @@ export const integrationService = {
       return { success: true, message: `${config.name} esta activo` };
     }
     return { success: false, message: `${config.name} no esta configurado` };
+  },
+
+  async updateError(id: string, errorMsg: string): Promise<void> {
+    if (isDemoMode()) return;
+    const { error } = await supabase
+      .from('integration_configs')
+      .update({ last_error: errorMsg, updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) throw error;
   },
 };

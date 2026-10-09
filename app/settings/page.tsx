@@ -454,8 +454,9 @@ export default function SettingsPage() {
                   </div>
                 </div>
                 <div className="rounded-md bg-blue-50 p-3 text-xs text-blue-700 dark:bg-blue-950/30 dark:text-blue-400">
-                  El worker de Ollama corre en tu servidor Fedora local. Asegurate de que Ollama este instalado
-                  y escuchando en el host y puerto configurados. La API de Ollama debe ser accesible desde este servidor.
+                  El worker de Ollama corre en tu servidor Fedora local. La prueba de conexion se ejecuta desde la nube de Supabase,
+                  por lo que el host debe ser una IP publica o un dominio accesible desde internet (no un nombre de red local como "xeonfedoraserver").
+                  Si tu servidor esta detras de un router, configura port forwarding en el puerto 11434 o usa un tunnel (ej. Cloudflare Tunnel, Tailscale).
                 </div>
                 {testResult.ollama_worker && (
                   <div className={`rounded-md p-3 text-xs ${testResult.ollama_worker.success ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400' : 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400'}`}>
