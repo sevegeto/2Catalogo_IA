@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import {
   Database, Shield, Bell, Users, Save, Check, Store, FileSpreadsheet,
-  HardDrive, Chrome, Cpu, Plug, Loader2, RefreshCw, AlertCircle,
+  HardDrive, Chrome, Cpu, Loader2, RefreshCw, AlertCircle,
 } from 'lucide-react';
 import { AppShell } from '@/components/layout/app-shell';
 import { PageHeader } from '@/components/layout/page-header';
@@ -118,6 +118,10 @@ export default function SettingsPage() {
         await integrationService.update(id, {
           enabled: true,
           settings: ollamaSettings,
+        });
+      } else if (id === 'chrome_extension') {
+        await integrationService.update(id, {
+          enabled: true,
         });
       }
       setSavedIntegration(id);
@@ -485,14 +489,45 @@ export default function SettingsPage() {
                 </Badge>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground">
-                  La extension de Chrome se instala desde la Chrome Web Store. Una vez instalada, podras capturar productos
-                  desde cualquier pagina web y enviarlos directamente al catalogo.
+                <div className="rounded-md bg-blue-50 p-3 text-xs text-blue-700 dark:bg-blue-950/30 dark:text-blue-400">
+                  La extension de Chrome se instala en modo desarrollador. Una vez instalada, podras capturar productos
+                  desde cualquier pagina web y enviarlos directamente al catalogo. Los productos capturados aparecen
+                  en la seccion de Capturas dentro de CatalogAI.
                 </div>
-                <Button size="sm" variant="outline" disabled>
-                  <Plug className="mr-1.5 h-4 w-4" />
-                  Abrir Chrome Web Store (proximo)
-                </Button>
+                <div className="space-y-2 rounded-md border p-3">
+                  <p className="text-xs font-medium">Instrucciones de instalacion:</p>
+                  <ol className="ml-4 list-decimal space-y-1 text-xs text-muted-foreground">
+                    <li>Descarga la carpeta <code className="rounded bg-muted px-1">chrome-extension/</code> de este proyecto</li>
+                    <li>Abre <code className="rounded bg-muted px-1">chrome://extensions/</code> en Chrome</li>
+                    <li>Activa el "Modo desarrollador" (esquina superior derecha)</li>
+                    <li>Haz clic en "Cargar descomprimida" y selecciona la carpeta</li>
+                    <li>Configura la URL y Anon Key de Supabase en el popup de la extension</li>
+                  </ol>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      window.open('/chrome-extension/README.md', '_blank');
+                    }}
+                  >
+                    <Chrome className="mr-1.5 h-4 w-4" />
+                    Ver instrucciones
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleSaveIntegration('chrome_extension')}
+                    disabled={savingIntegration === 'chrome_extension'}
+                  >
+                    {savedIntegration === 'chrome_extension' ? (
+                      <><Check className="mr-1.5 h-4 w-4" />Guardado</>
+                    ) : (
+                      <><Save className="mr-1.5 h-4 w-4" />Marcar como instalada</>
+                    )}
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
