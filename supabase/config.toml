@@ -1,0 +1,3 @@
+[functions.test-ollama]
+verify_jwt = true
+entrypoint = "./functions/test-ollama/index.ts"

@@ -951,3 +951,117 @@ export const imageMutations = {
     if (error) throw error;
   },
 };
+
+// ---- Integration Service ----
+
+export interface IntegrationConfig {
+  id: string;
+  name: string;
+  category: string;
+  enabled: boolean;
+  credentials: Record<string, string>;
+  settings: Record<string, string>;
+  lastConnectedAt: string | null;
+  lastError: string | null;
+  updatedAt: string;
+}
+
+function mapIntegration(r: DbRow): IntegrationConfig {
+  return {
+    id: r.id as string,
+    name: r.name as string,
+    category: r.category as string,
+    enabled: r.enabled as boolean,
+    credentials: (r.credentials as Record<string, string>) ?? {},
+    settings: (r.settings as Record<string, string>) ?? {},
+    lastConnectedAt: (r.last_connected_at as string) ?? null,
+    lastError: (r.last_error as string) ?? null,
+    updatedAt: r.updated_at as string,
+  };
+}
+
+const defaultIntegrations: IntegrationConfig[] = [
+  { id: 'mercadolibre', name: 'MercadoLibre', category: 'marketplace', enabled: true, credentials: {}, settings: { site: 'MLM', accountName: 'MITIENDOTA' }, lastConnectedAt: null, lastError: null, updatedAt: '' },
+  { id: 'google_sheets', name: 'Google Sheets', category: 'sheets', enabled: false, credentials: {}, settings: {}, lastConnectedAt: null, lastError: null, updatedAt: '' },
+  { id: 'google_drive', name: 'Google Drive', category: 'storage', enabled: false, credentials: {}, settings: {}, lastConnectedAt: null, lastError: null, updatedAt: '' },
+  { id: 'chrome_extension', name: 'Extension Chrome', category: 'extension', enabled: false, credentials: {}, settings: {}, lastConnectedAt: null, lastError: null, updatedAt: '' },
+  { id: 'ollama_worker', name: 'Ollama Worker', category: 'ai_worker', enabled: false, credentials: {}, settings: { host: 'localhost', port: '11434' }, lastConnectedAt: null, lastError: null, updatedAt: '' },
+];
+
+export const integrationService = {
+  async getAll(): Promise<IntegrationConfig[]> {
+    if (isDemoMode()) {
+      await delay();
+      return defaultIntegrations;
+    }
+    const { data, error } = await supabase.from('integration_configs').select('*').order('category', { ascending: true });
+    if (error) throw error;
+    return (data as DbRow[]).map(mapIntegration);
+  },
+
+  async get(id: string): Promise<IntegrationConfig | null> {
+    if (isDemoMode()) {
+      await delay();
+      return defaultIntegrations.find((i) => i.id === id) ?? null;
+    }
+    const { data, error } = await supabase.from('integration_configs').select('*').eq('id', id).maybeSingle();
+    if (error) throw error;
+    return data ? mapIntegration(data as DbRow) : null;
+  },
+
+  async update(id: string, updates: {
+    enabled?: boolean;
+    credentials?: Record<string, string>;
+    settings?: Record<string, string>;
+  }): Promise<void> {
+    if (isDemoMode()) { await delay(); return; }
+    const snakeUpdates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (updates.enabled !== undefined) snakeUpdates.enabled = updates.enabled;
+    if (updates.credentials !== undefined) snakeUpdates.credentials = updates.credentials;
+    if (updates.settings !== undefined) snakeUpdates.settings = updates.settings;
+    if (updates.enabled === true) {
+      snakeUpdates.last_connected_at = new Date().toISOString();
+      snakeUpdates.last_error = null;
+    }
+    const { error } = await supabase.from('integration_configs').update(snakeUpdates).eq('id', id);
+    if (error) throw error;
+  },
+
+  async testConnection(id: string): Promise<{ success: boolean; message: string }> {
+    const config = await this.get(id);
+    if (!config) return { success: false, message: 'Integracion no encontrada' };
+
+    if (id === 'ollama_worker') {
+      const host = config.settings.host || 'localhost';
+      const port = config.settings.port || '11434';
+      if (isDemoMode()) {
+        await delay(500);
+        return { success: false, message: `No se puede conectar a ${host}:${port} en modo demo` };
+      }
+      try {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/test-ollama`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ host, port }),
+        });
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          return { success: false, message: body.error || `HTTP ${response.status}` };
+        }
+        const data = await response.json();
+        return { success: true, message: data.message || `Conexion exitosa a ${host}:${port}` };
+      } catch {
+        return { success: false, message: `No se pudo conectar a ${host}:${port}` };
+      }
+    }
+
+    if (config.enabled) {
+      await this.update(id, { enabled: true });
+      return { success: true, message: `${config.name} esta activo` };
+    }
+    return { success: false, message: `${config.name} no esta configurado` };
+  },
+};

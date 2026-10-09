@@ -20,8 +20,9 @@ import {
 import { AppShell } from '@/components/layout/app-shell';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { dashboardService, productService } from '@/lib/services';
+import { dashboardService, productService, integrationService } from '@/lib/services';
 import type { DashboardActivity, DashboardStats, Product } from '@/types';
+import type { IntegrationConfig } from '@/lib/services';
 import { cn } from '@/lib/utils';
 
 interface StatCardProps {
@@ -81,17 +82,60 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [activity, setActivity] = useState<DashboardActivity[]>([]);
   const [productCount, setProductCount] = useState(0);
+  const [integrations, setIntegrations] = useState<IntegrationConfig[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([dashboardService.getStats(), dashboardService.getActivity(), productService.getProducts()])
-      .then(([s, a, p]) => {
+    Promise.all([dashboardService.getStats(), dashboardService.getActivity(), productService.getProducts(), integrationService.getAll()])
+      .then(([s, a, p, ints]) => {
         setStats(s);
         setActivity(a);
         setProductCount(p.length);
+        setIntegrations(ints);
       })
       .finally(() => setLoading(false));
   }, []);
+
+  const sysInt = (id: string) => integrations.find((i) => i.id === id);
+  const ollama = sysInt('ollama_worker');
+  const sheets = sysInt('google_sheets');
+  const ml = sysInt('mercadolibre');
+  const drive = sysInt('google_drive');
+  const chrome = sysInt('chrome_extension');
+
+  const renderStatus = (int: IntegrationConfig | undefined, label: string, inactiveText: string) => {
+    if (!int || (!int.enabled && !int.lastConnectedAt)) {
+      return (
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-muted-foreground">{label}</span>
+          <span className="flex items-center gap-1.5 font-medium text-muted-foreground">
+            <span className="h-2 w-2 rounded-full bg-slate-400" />
+            {inactiveText}
+          </span>
+        </div>
+      );
+    }
+    if (int.enabled) {
+      return (
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-muted-foreground">{label}</span>
+          <span className="flex items-center gap-1.5 font-medium text-emerald-600">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            Conectado
+          </span>
+        </div>
+      );
+    }
+    return (
+      <div className="flex items-center justify-between text-sm">
+        <span className="text-muted-foreground">{label}</span>
+        <span className="flex items-center gap-1.5 font-medium text-amber-600">
+          <span className="h-2 w-2 rounded-full bg-amber-500" />
+          Inactivo
+        </span>
+      </div>
+    );
+  };
 
   return (
     <AppShell>
@@ -248,41 +292,11 @@ export default function DashboardPage() {
               <CardTitle className="text-base">Estado del sistema</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Worker Fedora/Ollama</span>
-                <span className="flex items-center gap-1.5 font-medium text-amber-600">
-                  <span className="h-2 w-2 rounded-full bg-amber-500" />
-                  Desconectado (demo)
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Sincronizacion Google Sheets</span>
-                <span className="flex items-center gap-1.5 font-medium text-muted-foreground">
-                  <span className="h-2 w-2 rounded-full bg-slate-400" />
-                  No configurada
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">MercadoLibre — MITIENDOTA</span>
-                <span className="flex items-center gap-1.5 font-medium text-emerald-600">
-                  <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                  Sincronizado (demo)
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Google Drive Storage</span>
-                <span className="flex items-center gap-1.5 font-medium text-muted-foreground">
-                  <span className="h-2 w-2 rounded-full bg-slate-400" />
-                  No configurado
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Extensión Chrome</span>
-                <span className="flex items-center gap-1.5 font-medium text-muted-foreground">
-                  <span className="h-2 w-2 rounded-full bg-slate-400" />
-                  No instalada
-                </span>
-              </div>
+              {renderStatus(ollama, 'Worker Fedora/Ollama', 'No configurado')}
+              {renderStatus(sheets, 'Sincronizacion Google Sheets', 'No configurada')}
+              {renderStatus(ml, 'MercadoLibre - MITIENDOTA', 'No configurado')}
+              {renderStatus(drive, 'Google Drive Storage', 'No configurado')}
+              {renderStatus(chrome, 'Extension Chrome', 'No instalada')}
             </CardContent>
           </Card>
         </div>
