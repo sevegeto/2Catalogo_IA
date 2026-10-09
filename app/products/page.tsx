@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Plus, Filter, ImageIcon, Barcode, Store } from 'lucide-react';
+import { Plus, Filter, ImageIcon, Store } from 'lucide-react';
 import { AppShell } from '@/components/layout/app-shell';
 import { PageHeader } from '@/components/layout/page-header';
 import { ProductStatusBadge } from '@/components/layout/status-badges';
@@ -199,9 +199,6 @@ export default function ProductsPage() {
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span>
             {filtered.length} de {products.length} productos
-          </span>
-          <span className="flex items-center gap-1">
-            <Barcode className="h-3 w-3" /> Demo data
           </span>
         </div>
       </div>

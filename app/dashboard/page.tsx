@@ -20,8 +20,8 @@ import {
 import { AppShell } from '@/components/layout/app-shell';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { dashboardService } from '@/lib/services';
-import type { DashboardActivity, DashboardStats } from '@/types';
+import { dashboardService, productService } from '@/lib/services';
+import type { DashboardActivity, DashboardStats, Product } from '@/types';
 import { cn } from '@/lib/utils';
 
 interface StatCardProps {
@@ -80,13 +80,15 @@ function formatRelativeTime(iso: string): string {
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [activity, setActivity] = useState<DashboardActivity[]>([]);
+  const [productCount, setProductCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([dashboardService.getStats(), dashboardService.getActivity()])
-      .then(([s, a]) => {
+    Promise.all([dashboardService.getStats(), dashboardService.getActivity(), productService.getProducts()])
+      .then(([s, a, p]) => {
         setStats(s);
         setActivity(a);
+        setProductCount(p.length);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -189,7 +191,7 @@ export default function DashboardPage() {
             />
             <StatCard
               label="Productos totales"
-              value={3}
+              value={productCount}
               icon={Package}
               href="/products"
               accent="bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"

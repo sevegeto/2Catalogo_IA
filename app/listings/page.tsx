@@ -163,7 +163,7 @@ export default function ListingsPage() {
         </div>
 
         <p className="text-xs text-muted-foreground">
-          {filtered.length} publicaciones — Demo data
+          {filtered.length} publicaciones
         </p>
       </div>
     </AppShell>
