@@ -8,17 +8,25 @@ import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
 import { ImageStatusBadge } from '@/components/layout/status-badges';
 import { imageGlobalService } from '@/lib/services';
+import { ErrorState } from '@/components/layout/error-state';
 import type { ProductImage } from '@/types';
 
 export default function ImagesPage() {
   const [images, setImages] = useState<ProductImage[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   const load = () => {
-    imageGlobalService.getAllImages().then((imgs) => {
-      setImages(imgs);
-      setLoading(false);
-    });
+    setLoading(true);
+    setError(false);
+    imageGlobalService
+      .getAllImages()
+      .then((imgs) => setImages(imgs))
+      .catch(() => {
+        setError(true);
+        setLoading(false);
+      })
+      .finally(() => setLoading(false));
   };
 
   useEffect(() => { load(); }, []);
@@ -40,7 +48,9 @@ export default function ImagesPage() {
         description="Galeria global de imagenes, procesamiento y aprobacion."
       />
       <div className="p-6">
-        {loading ? (
+        {error ? (
+          <ErrorState onRetry={load} />
+        ) : loading ? (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {Array.from({ length: 4 }).map((_, i) => (
               <div key={i} className="h-48 animate-pulse rounded-lg border bg-muted/40" />

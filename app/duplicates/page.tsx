@@ -16,17 +16,26 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { productService } from '@/lib/services';
+import { ErrorState } from '@/components/layout/error-state';
 import type { Product } from '@/types';
 
 export default function DuplicatesPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  const load = () => {
+    setLoading(true);
+    setError(false);
+    productService
+      .getProducts()
+      .then((p) => setProducts(p))
+      .catch(() => setError(true))
+      .finally(() => setLoading(false));
+  };
 
   useEffect(() => {
-    productService.getProducts().then((p) => {
-      setProducts(p);
-      setLoading(false);
-    });
+    load();
   }, []);
 
   const duplicateGroups = (() => {
@@ -52,7 +61,9 @@ export default function DuplicatesPage() {
         description="Grupos de productos sospechosos de ser duplicados."
       />
       <div className="space-y-4 p-6">
-        {loading ? (
+        {error ? (
+          <ErrorState onRetry={load} />
+        ) : loading ? (
           <div className="h-32 animate-pulse rounded-lg border bg-muted/40" />
         ) : !hasDuplicates ? (
           <div className="rounded-lg border p-12 text-center">

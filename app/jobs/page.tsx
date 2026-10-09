@@ -33,20 +33,29 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { jobService } from '@/lib/services';
+import { jobService, jobMutations } from '@/lib/services';
+import { ErrorState } from '@/components/layout/error-state';
 import type { Job } from '@/types';
 
 export default function JobsPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
 
+  const load = () => {
+    setLoading(true);
+    setError(false);
+    jobService
+      .getJobs()
+      .then((j) => setJobs(j))
+      .catch(() => setError(true))
+      .finally(() => setLoading(false));
+  };
+
   useEffect(() => {
-    jobService.getJobs().then((j) => {
-      setJobs(j);
-      setLoading(false);
-    });
+    load();
   }, []);
 
   const filtered = jobs.filter(
@@ -130,121 +139,137 @@ export default function JobsPage() {
           </Select>
         </div>
 
-        <div className="rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Tipo</TableHead>
-                <TableHead>Entidad</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead className="text-center">Prioridad</TableHead>
-                <TableHead>Worker</TableHead>
-                <TableHead className="text-center">Intentos</TableHead>
-                <TableHead>Programado</TableHead>
-                <TableHead>Inicio</TableHead>
-                <TableHead>Fin</TableHead>
-                <TableHead>Error</TableHead>
-                <TableHead className="text-center">Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <TableRow key={i}>
-                    {Array.from({ length: 11 }).map((_, j) => (
-                      <TableCell key={j}>
-                        <div className="h-5 animate-pulse rounded bg-muted/40" />
+        {error ? (
+          <ErrorState onRetry={load} />
+        ) : (
+          <div className="rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Tipo</TableHead>
+                  <TableHead>Entidad</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead className="text-center">Prioridad</TableHead>
+                  <TableHead>Worker</TableHead>
+                  <TableHead className="text-center">Intentos</TableHead>
+                  <TableHead>Programado</TableHead>
+                  <TableHead>Inicio</TableHead>
+                  <TableHead>Fin</TableHead>
+                  <TableHead>Error</TableHead>
+                  <TableHead className="text-center">Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <TableRow key={i}>
+                      {Array.from({ length: 11 }).map((_, j) => (
+                        <TableCell key={j}>
+                          <div className="h-5 animate-pulse rounded bg-muted/40" />
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))
+                ) : filtered.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={11} className="py-8 text-center text-sm text-muted-foreground">
+                      Sin trabajos para este filtro.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filtered.map((j) => (
+                    <TableRow key={j.id} className="hover:bg-muted/40">
+                      <TableCell className="text-sm font-medium">
+                        {jobTypeLabel[j.jobType] ?? j.jobType}
                       </TableCell>
-                    ))}
-                  </TableRow>
-                ))
-              ) : (
-                filtered.map((j) => (
-                  <TableRow key={j.id} className="hover:bg-muted/40">
-                    <TableCell className="text-sm font-medium">
-                      {jobTypeLabel[j.jobType] ?? j.jobType}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {j.entityLabel ?? '—'}
-                    </TableCell>
-                    <TableCell>
-                      <JobStatusBadge status={j.status} />
-                    </TableCell>
-                    <TableCell className="text-center text-sm">
-                      {j.priority}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {j.assignedWorker ?? '—'}
-                    </TableCell>
-                    <TableCell className="text-center text-sm">
-                      {j.attempts}/{j.maxAttempts}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {new Date(j.scheduledAt).toLocaleString('es-MX', {
-                        day: '2-digit',
-                        month: 'short',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {j.startedAt
-                        ? new Date(j.startedAt).toLocaleTimeString('es-MX', {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })
-                        : '—'}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {j.completedAt
-                        ? new Date(j.completedAt).toLocaleTimeString('es-MX', {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })
-                        : '—'}
-                    </TableCell>
-                    <TableCell className="text-xs text-red-600 max-w-32 truncate">
-                      {j.errorMessage ?? '—'}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center justify-center gap-1">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 w-7 p-0"
-                          onClick={() => setSelectedJob(j)}
-                          aria-label="Ver detalle"
-                        >
-                          <Code2 className="h-3.5 w-3.5" />
-                        </Button>
-                        {(j.status === 'FAILED' || j.status === 'CANCELLED') && (
+                      <TableCell className="text-xs text-muted-foreground">
+                        {j.entityLabel ?? '—'}
+                      </TableCell>
+                      <TableCell>
+                        <JobStatusBadge status={j.status} />
+                      </TableCell>
+                      <TableCell className="text-center text-sm">
+                        {j.priority}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {j.assignedWorker ?? '—'}
+                      </TableCell>
+                      <TableCell className="text-center text-sm">
+                        {j.attempts}/{j.maxAttempts}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {new Date(j.scheduledAt).toLocaleString('es-MX', {
+                          day: '2-digit',
+                          month: 'short',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {j.startedAt
+                          ? new Date(j.startedAt).toLocaleTimeString('es-MX', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })
+                          : '—'}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {j.completedAt
+                          ? new Date(j.completedAt).toLocaleTimeString('es-MX', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })
+                          : '—'}
+                      </TableCell>
+                      <TableCell className="text-xs text-red-600 max-w-32 truncate">
+                        {j.errorMessage ?? '—'}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center justify-center gap-1">
                           <Button
                             size="sm"
                             variant="ghost"
                             className="h-7 w-7 p-0"
-                            aria-label="Reintentar"
+                            onClick={() => setSelectedJob(j)}
+                            aria-label="Ver detalle"
                           >
-                            <RotateCcw className="h-3.5 w-3.5" />
+                            <Code2 className="h-3.5 w-3.5" />
                           </Button>
-                        )}
-                        {j.status === 'PENDING' && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 w-7 p-0"
-                            aria-label="Cancelar"
-                          >
-                            <XCircle className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
+                          {(j.status === 'FAILED' || j.status === 'CANCELLED') && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 w-7 p-0"
+                              aria-label="Reintentar"
+                              onClick={() => {
+                                jobMutations.retryJob(j.id).then(load);
+                              }}
+                            >
+                              <RotateCcw className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                          {j.status === 'PENDING' && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 w-7 p-0"
+                              aria-label="Cancelar"
+                              onClick={() => {
+                                jobMutations.cancelJob(j.id).then(load);
+                              }}
+                            >
+                              <XCircle className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        )}
       </div>
 
       <Dialog

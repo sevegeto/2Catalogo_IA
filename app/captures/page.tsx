@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Camera, ExternalLink } from 'lucide-react';
 import { AppShell } from '@/components/layout/app-shell';
 import { PageHeader } from '@/components/layout/page-header';
+import { ErrorState } from '@/components/layout/error-state';
 import { CaptureStatusBadge, ConfidenceBadge } from '@/components/layout/status-badges';
 import {
   Table,
@@ -19,13 +20,18 @@ import type { Capture } from '@/types';
 export default function CapturesPage() {
   const [captures, setCaptures] = useState<Capture[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
-  useEffect(() => {
-    captureService.getCaptures().then((c) => {
-      setCaptures(c);
-      setLoading(false);
-    });
-  }, []);
+  const load = () => {
+    setLoading(true);
+    setError(false);
+    captureService.getCaptures()
+      .then((c) => setCaptures(c))
+      .catch(() => setError(true))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { load(); }, []);
 
   return (
     <AppShell>
@@ -34,6 +40,9 @@ export default function CapturesPage() {
         description="Informacion capturada por extension, Sheets o importacion manual."
       />
       <div className="space-y-4 p-6">
+        {error ? (
+          <ErrorState onRetry={load} />
+        ) : (
         <div className="rounded-lg border">
           <Table>
             <TableHeader>
@@ -61,6 +70,12 @@ export default function CapturesPage() {
                     ))}
                   </TableRow>
                 ))
+              ) : captures.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={10} className="py-8 text-center text-sm text-muted-foreground">
+                    Sin capturas registradas.
+                  </TableCell>
+                </TableRow>
               ) : (
                 captures.map((c) => (
                   <TableRow key={c.id} className="hover:bg-muted/40">
@@ -124,6 +139,7 @@ export default function CapturesPage() {
             </TableBody>
           </Table>
         </div>
+        )}
       </div>
     </AppShell>
   );

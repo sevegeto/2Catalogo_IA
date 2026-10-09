@@ -14,6 +14,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { inventoryGlobalService, inventoryService } from '@/lib/services';
+import { ErrorState } from '@/components/layout/error-state';
 import type { InventoryBalance, ProductVariant } from '@/types';
 import { productService } from '@/lib/services';
 
@@ -21,19 +22,28 @@ export default function InventoryPage() {
   const [inventory, setInventory] = useState<InventoryBalance[]>([]);
   const [variants, setVariants] = useState<Record<string, ProductVariant>>({});
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
-  useEffect(() => {
+  const load = () => {
+    setLoading(true);
+    setError(false);
     Promise.all([
       inventoryGlobalService.getAllInventory(),
       productService.getProducts(),
-    ]).then(async ([inv, products]) => {
-      const allVariants = await Promise.all(products.map((p) => productService.getVariants(p.id)));
-      const variantMap: Record<string, ProductVariant> = {};
-      allVariants.flat().forEach((v) => { variantMap[v.id] = v; });
-      setInventory(inv);
-      setVariants(variantMap);
-      setLoading(false);
-    });
+    ])
+      .then(async ([inv, products]) => {
+        const allVariants = await Promise.all(products.map((p) => productService.getVariants(p.id)));
+        const variantMap: Record<string, ProductVariant> = {};
+        allVariants.flat().forEach((v) => { variantMap[v.id] = v; });
+        setInventory(inv);
+        setVariants(variantMap);
+      })
+      .catch(() => setError(true))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    load();
   }, []);
 
   return (
@@ -82,79 +92,83 @@ export default function InventoryPage() {
           </div>
         </div>
 
-        <div className="rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>SKU</TableHead>
-                <TableHead>Variante</TableHead>
-                <TableHead>Almacen</TableHead>
-                <TableHead>Ubicacion</TableHead>
-                <TableHead className="text-center">Exist.</TableHead>
-                <TableHead className="text-center">Disp.</TableHead>
-                <TableHead className="text-center">Reserv.</TableHead>
-                <TableHead className="text-center">Entr.</TableHead>
-                <TableHead>Actualizado</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
-                Array.from({ length: 3 }).map((_, i) => (
-                  <TableRow key={i}>
-                    {Array.from({ length: 9 }).map((_, j) => (
-                      <TableCell key={j}>
-                        <div className="h-5 animate-pulse rounded bg-muted/40" />
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))
-              ) : inventory.length === 0 ? (
+        {error ? (
+          <ErrorState onRetry={load} />
+        ) : (
+          <div className="rounded-lg border">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={9} className="py-8 text-center text-sm text-muted-foreground">
-                    Sin registros de inventario.
-                  </TableCell>
+                  <TableHead>SKU</TableHead>
+                  <TableHead>Variante</TableHead>
+                  <TableHead>Almacen</TableHead>
+                  <TableHead>Ubicacion</TableHead>
+                  <TableHead className="text-center">Exist.</TableHead>
+                  <TableHead className="text-center">Disp.</TableHead>
+                  <TableHead className="text-center">Reserv.</TableHead>
+                  <TableHead className="text-center">Entr.</TableHead>
+                  <TableHead>Actualizado</TableHead>
                 </TableRow>
-              ) : (
-                inventory.map((i) => {
-                  const variant = variants[i.variantId];
-                  return (
-                    <TableRow key={i.id} className="hover:bg-muted/40">
-                      <TableCell className="font-mono text-xs">
-                        {variant ? (
-                          <Link href={`/products/${variant.productId}`} className="hover:underline">
-                            {i.variantSku}
-                          </Link>
-                        ) : (
-                          i.variantSku
-                        )}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {variant?.variantName ?? '—'}
-                      </TableCell>
-                      <TableCell className="text-sm">{i.warehouseName}</TableCell>
-                      <TableCell className="text-xs font-mono text-muted-foreground">
-                        {i.locationCode ?? '—'}
-                      </TableCell>
-                      <TableCell className="text-center text-sm font-medium">{i.onHand}</TableCell>
-                      <TableCell className="text-center text-sm">
-                        <span className={i.available < 5 ? 'font-medium text-amber-600' : ''}>
-                          {i.available}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-center text-sm">{i.reserved}</TableCell>
-                      <TableCell className="text-center text-sm">
-                        {i.incoming > 0 ? <span className="text-emerald-600">{i.incoming}</span> : '0'}
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {new Date(i.updatedAt).toLocaleDateString('es-MX')}
-                      </TableCell>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  Array.from({ length: 3 }).map((_, i) => (
+                    <TableRow key={i}>
+                      {Array.from({ length: 9 }).map((_, j) => (
+                        <TableCell key={j}>
+                          <div className="h-5 animate-pulse rounded bg-muted/40" />
+                        </TableCell>
+                      ))}
                     </TableRow>
-                  );
-                })
-              )}
-            </TableBody>
-          </Table>
-        </div>
+                  ))
+                ) : inventory.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={9} className="py-8 text-center text-sm text-muted-foreground">
+                      Sin registros de inventario.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  inventory.map((i) => {
+                    const variant = variants[i.variantId];
+                    return (
+                      <TableRow key={i.id} className="hover:bg-muted/40">
+                        <TableCell className="font-mono text-xs">
+                          {variant ? (
+                            <Link href={`/products/${variant.productId}`} className="hover:underline">
+                              {i.variantSku}
+                            </Link>
+                          ) : (
+                            i.variantSku
+                          )}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {variant?.variantName ?? '—'}
+                        </TableCell>
+                        <TableCell className="text-sm">{i.warehouseName}</TableCell>
+                        <TableCell className="text-xs font-mono text-muted-foreground">
+                          {i.locationCode ?? '—'}
+                        </TableCell>
+                        <TableCell className="text-center text-sm font-medium">{i.onHand}</TableCell>
+                        <TableCell className="text-center text-sm">
+                          <span className={i.available < 5 ? 'font-medium text-amber-600' : ''}>
+                            {i.available}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-center text-sm">{i.reserved}</TableCell>
+                        <TableCell className="text-center text-sm">
+                          {i.incoming > 0 ? <span className="text-emerald-600">{i.incoming}</span> : '0'}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {new Date(i.updatedAt).toLocaleDateString('es-MX')}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        )}
       </div>
     </AppShell>
   );

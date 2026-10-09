@@ -20,6 +20,7 @@ import {
 import { AppShell } from '@/components/layout/app-shell';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ErrorState } from '@/components/layout/error-state';
 import { dashboardService, productService, integrationService } from '@/lib/services';
 import type { DashboardActivity, DashboardStats, Product } from '@/types';
 import type { IntegrationConfig } from '@/lib/services';
@@ -68,8 +69,9 @@ const activityIcon: Record<DashboardActivity['type'], React.ElementType> = {
 
 function formatRelativeTime(iso: string): string {
   const date = new Date(iso);
-  const now = new Date('2026-10-06T10:00:00Z');
+  const now = new Date();
   const diffMs = now.getTime() - date.getTime();
+  if (diffMs < 0) return 'ahora';
   const hours = Math.floor(diffMs / (1000 * 60 * 60));
   const days = Math.floor(hours / 24);
   if (days > 0) return `hace ${days}d`;
@@ -84,8 +86,11 @@ export default function DashboardPage() {
   const [productCount, setProductCount] = useState(0);
   const [integrations, setIntegrations] = useState<IntegrationConfig[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
-  useEffect(() => {
+  const load = () => {
+    setLoading(true);
+    setError(false);
     Promise.all([dashboardService.getStats(), dashboardService.getActivity(), productService.getProducts(), integrationService.getAll()])
       .then(([s, a, p, ints]) => {
         setStats(s);
@@ -93,8 +98,11 @@ export default function DashboardPage() {
         setProductCount(p.length);
         setIntegrations(ints);
       })
+      .catch(() => setError(true))
       .finally(() => setLoading(false));
-  }, []);
+  };
+
+  useEffect(() => { load(); }, []);
 
   const sysInt = (id: string) => integrations.find((i) => i.id === id);
   const ollama = sysInt('ollama_worker');
@@ -136,6 +144,20 @@ export default function DashboardPage() {
       </div>
     );
   };
+
+  if (error) {
+    return (
+      <AppShell>
+        <PageHeader
+          title="Dashboard"
+          description="Resumen general del estado del catalogo, capturas y trabajos."
+        />
+        <div className="p-6">
+          <ErrorState onRetry={load} />
+        </div>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell>
@@ -261,6 +283,10 @@ export default function DashboardPage() {
                     />
                   ))}
                 </div>
+              ) : activity.length === 0 ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  Sin actividad reciente.
+                </p>
               ) : (
                 <ul className="space-y-1">
                   {activity.map((a) => {

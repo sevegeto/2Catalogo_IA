@@ -595,6 +595,41 @@ export const supplierService = {
     if (error) throw error;
     return (data as DbRow[]).map(mapProductSupplier);
   },
+
+  async createSupplier(data: {
+    companyName: string;
+    contactName?: string;
+    email?: string;
+    phone?: string;
+    website?: string;
+  }): Promise<Supplier | null> {
+    const id = `sup_${Date.now()}`;
+    const now = new Date().toISOString();
+    const row = {
+      id,
+      company_name: data.companyName,
+      contact_name: data.contactName ?? null,
+      email: data.email ?? null,
+      phone: data.phone ?? null,
+      website: data.website ?? null,
+      active: true,
+      created_at: now,
+      updated_at: now,
+    };
+    if (isDemoMode()) {
+      await delay();
+      const s: Supplier = {
+        id, companyName: data.companyName, contactName: data.contactName ?? null,
+        email: data.email ?? null, phone: data.phone ?? null, website: data.website ?? null,
+        active: true, createdAt: now, updatedAt: now,
+      };
+      mockSuppliers.push(s);
+      return s;
+    }
+    const { data: inserted, error } = await supabase.from('suppliers').insert(row).select('*').maybeSingle();
+    if (error) throw error;
+    return inserted ? mapSupplier(inserted as DbRow) : null;
+  },
 };
 
 // ---- Warehouse Service ----
@@ -605,9 +640,45 @@ export const warehouseService = {
       await delay();
       return mockWarehouses;
     }
-    const { data, error } = await supabase.from('warehouses').select('*');
+    const { data, error } = await supabase.from('warehouses').select('*').order('name', { ascending: true });
     if (error) throw error;
     return (data as DbRow[]).map(mapWarehouse);
+  },
+
+  async createWarehouse(data: {
+    name: string;
+    code: string;
+    street?: string;
+    city?: string;
+    state?: string;
+    country?: string;
+    isDefault?: boolean;
+  }): Promise<Warehouse | null> {
+    const id = `wh_${Date.now()}`;
+    const row = {
+      id,
+      name: data.name,
+      code: data.code,
+      street: data.street ?? '',
+      city: data.city ?? '',
+      state: data.state ?? '',
+      country: data.country ?? '',
+      is_default: data.isDefault ?? false,
+      active: true,
+    };
+    if (isDemoMode()) {
+      await delay();
+      const w: Warehouse = {
+        id, name: data.name, code: data.code,
+        address: { street: data.street ?? '', city: data.city ?? '', state: data.state ?? '', country: data.country ?? '' },
+        isDefault: data.isDefault ?? false, active: true,
+      };
+      mockWarehouses.push(w);
+      return w;
+    }
+    const { data: inserted, error } = await supabase.from('warehouses').insert(row).select('*').maybeSingle();
+    if (error) throw error;
+    return inserted ? mapWarehouse(inserted as DbRow) : null;
   },
 };
 
@@ -638,8 +709,21 @@ export const dashboardService = {
     const newCaptures = capturesData.filter((c) => c.status === 'RECEIVED' || c.status === 'NORMALIZING').length;
     const pendingIdentification = capturesData.filter((c) => c.status === 'NEW_PRODUCT_CANDIDATE').length;
     const pendingMatches = matchesData.filter((m) => m.decision === 'PENDING').length;
-    const possibleDuplicates = 0;
-    const productsWithoutUpc = 0;
+
+    const brandModelMap = new Map<string, number>();
+    for (const p of productsData) {
+      const brand = (p.brand_name as string)?.toLowerCase() ?? '';
+      const model = (p.model as string)?.toLowerCase() ?? '';
+      if (brand || model) {
+        const key = `${brand}_${model}`;
+        brandModelMap.set(key, (brandModelMap.get(key) ?? 0) + 1);
+      }
+    }
+    const possibleDuplicates = Array.from(brandModelMap.values()).filter((c) => c > 1).length;
+
+    const { data: identifiers } = await supabase.from('product_identifiers').select('product_id').eq('identifier_type', 'UPC_A').eq('is_primary', true);
+    const productsWithUpc = new Set(((identifiers as DbRow[]) ?? []).map((i) => i.product_id as string));
+    const productsWithoutUpc = productsData.filter((p) => !productsWithUpc.has(p.id as string)).length;
     const productsWithoutImages = productsData.filter((p) => !p.primary_image_url).length;
     const activeListings = listingsData.filter((l) => l.listing_status === 'ACTIVE').length;
     const listingsWithErrors = listingsData.filter((l) => l.listing_status === 'ERROR').length;
@@ -948,6 +1032,33 @@ export const imageMutations = {
     if (isDemoMode()) { await delay(); return; }
     await supabase.from('product_images').update({ image_type: 'ALTERNATE' }).eq('product_id', productId).eq('image_type', 'MAIN');
     const { error } = await supabase.from('product_images').update({ image_type: 'MAIN', updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) throw error;
+  },
+};
+
+// ---- Job Mutations ----
+
+export const jobMutations = {
+  async retryJob(id: string): Promise<void> {
+    if (isDemoMode()) { await delay(); return; }
+    const { error } = await supabase.from('jobs').update({
+      status: 'PENDING',
+      attempts: 0,
+      error_message: null,
+      started_at: null,
+      completed_at: null,
+      scheduled_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }).eq('id', id);
+    if (error) throw error;
+  },
+
+  async cancelJob(id: string): Promise<void> {
+    if (isDemoMode()) { await delay(); return; }
+    const { error } = await supabase.from('jobs').update({
+      status: 'CANCELLED',
+      updated_at: new Date().toISOString(),
+    }).eq('id', id);
     if (error) throw error;
   },
 };

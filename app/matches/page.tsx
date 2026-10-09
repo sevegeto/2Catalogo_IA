@@ -23,17 +23,26 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { matchService } from '@/lib/services';
+import { ErrorState } from '@/components/layout/error-state';
 import type { ProductMatch } from '@/types';
 
 export default function MatchesPage() {
   const [matches, setMatches] = useState<ProductMatch[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  const load = () => {
+    setLoading(true);
+    setError(false);
+    matchService
+      .getMatches()
+      .then((m) => setMatches(m))
+      .catch(() => setError(true))
+      .finally(() => setLoading(false));
+  };
 
   useEffect(() => {
-    matchService.getMatches().then((m) => {
-      setMatches(m);
-      setLoading(false);
-    });
+    load();
   }, []);
 
   return (
@@ -80,74 +89,84 @@ export default function MatchesPage() {
           </div>
         </div>
 
-        <div className="rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="min-w-48">Captura</TableHead>
-                <TableHead>Candidato</TableHead>
-                <TableHead className="text-center">Confianza</TableHead>
-                <TableHead>Razon principal</TableHead>
-                <TableHead className="text-center">Conflictos</TableHead>
-                <TableHead>Recomendacion</TableHead>
-                <TableHead>Decision</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
-                Array.from({ length: 2 }).map((_, i) => (
-                  <TableRow key={i}>
-                    {Array.from({ length: 7 }).map((_, j) => (
-                      <TableCell key={j}>
-                        <div className="h-5 animate-pulse rounded bg-muted/40" />
+        {error ? (
+          <ErrorState onRetry={load} />
+        ) : (
+          <div className="rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="min-w-48">Captura</TableHead>
+                  <TableHead>Candidato</TableHead>
+                  <TableHead className="text-center">Confianza</TableHead>
+                  <TableHead>Razon principal</TableHead>
+                  <TableHead className="text-center">Conflictos</TableHead>
+                  <TableHead>Recomendacion</TableHead>
+                  <TableHead>Decision</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  Array.from({ length: 2 }).map((_, i) => (
+                    <TableRow key={i}>
+                      {Array.from({ length: 7 }).map((_, j) => (
+                        <TableCell key={j}>
+                          <div className="h-5 animate-pulse rounded bg-muted/40" />
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))
+                ) : matches.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="py-8 text-center text-sm text-muted-foreground">
+                      Sin coincidencias registradas.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  matches.map((m) => (
+                    <TableRow key={m.id} className="hover:bg-muted/40">
+                      <TableCell>
+                        <Link
+                          href={`/matches/${m.id}`}
+                          className="font-medium hover:underline"
+                        >
+                          {m.captureTitle}
+                        </Link>
+                        <p className="text-xs text-muted-foreground">
+                          {m.captureSourceDomain}
+                        </p>
                       </TableCell>
-                    ))}
-                  </TableRow>
-                ))
-              ) : (
-                matches.map((m) => (
-                  <TableRow key={m.id} className="hover:bg-muted/40">
-                    <TableCell>
-                      <Link
-                        href={`/matches/${m.id}`}
-                        className="font-medium hover:underline"
-                      >
-                        {m.captureTitle}
-                      </Link>
-                      <p className="text-xs text-muted-foreground">
-                        {m.captureSourceDomain}
-                      </p>
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {m.candidateTitle}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <ConfidenceBadge confidence={m.confidencePercentage} />
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {m.matchReasons[0] ?? '—'}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {m.conflicts.length > 0 ? (
-                        <span className="font-medium text-red-600">
-                          {m.conflicts.length}
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground">0</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-xs font-mono">
-                      {m.recommendation}
-                    </TableCell>
-                    <TableCell>
-                      <MatchDecisionBadge decision={m.decision} />
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
+                      <TableCell className="text-sm">
+                        {m.candidateTitle}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <ConfidenceBadge confidence={m.confidencePercentage} />
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {m.matchReasons[0] ?? '—'}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {m.conflicts.length > 0 ? (
+                          <span className="font-medium text-red-600">
+                            {m.conflicts.length}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">0</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-xs font-mono">
+                        {m.recommendation}
+                      </TableCell>
+                      <TableCell>
+                        <MatchDecisionBadge decision={m.decision} />
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        )}
       </div>
     </AppShell>
   );
