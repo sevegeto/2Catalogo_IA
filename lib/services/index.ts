@@ -686,3 +686,201 @@ export const auditService = {
     return (data as DbRow[]).map(mapAuditLog);
   },
 };
+
+// ---- Settings Service ----
+
+export interface AppSettings {
+  rateLimiting: boolean;
+  csrfProtection: boolean;
+  auditLogging: boolean;
+  notifJobsFailed: boolean;
+  notifDuplicates: boolean;
+}
+
+const defaultSettings: AppSettings = {
+  rateLimiting: true,
+  csrfProtection: true,
+  auditLogging: true,
+  notifJobsFailed: true,
+  notifDuplicates: true,
+};
+
+export const settingsService = {
+  async getSettings(): Promise<AppSettings> {
+    if (isDemoMode()) return defaultSettings;
+    const { data, error } = await supabase.from('app_settings').select('*').eq('id', 1).maybeSingle();
+    if (error) throw error;
+    if (!data) return defaultSettings;
+    const r = data as DbRow;
+    return {
+      rateLimiting: r.rate_limiting as boolean,
+      csrfProtection: r.csrf_protection as boolean,
+      auditLogging: r.audit_logging as boolean,
+      notifJobsFailed: r.notif_jobs_failed as boolean,
+      notifDuplicates: r.notif_duplicates as boolean,
+    };
+  },
+
+  async updateSettings(settings: AppSettings): Promise<void> {
+    if (isDemoMode()) { await delay(); return; }
+    const { error } = await supabase.from('app_settings').update({
+      rate_limiting: settings.rateLimiting,
+      csrf_protection: settings.csrfProtection,
+      audit_logging: settings.auditLogging,
+      notif_jobs_failed: settings.notifJobsFailed,
+      notif_duplicates: settings.notifDuplicates,
+      updated_at: new Date().toISOString(),
+    }).eq('id', 1);
+    if (error) throw error;
+  },
+};
+
+// ---- Product Mutations ----
+
+export const productMutations = {
+  async updateProduct(id: string, updates: {
+    titleMaster?: string;
+    descriptionMaster?: string;
+    brandName?: string;
+    model?: string;
+    manufacturer?: string;
+    productType?: string;
+    condition?: string;
+    status?: string;
+    taxProductCode?: string | null;
+    taxUnitCode?: string | null;
+    taxObjectCode?: string | null;
+    launchDate?: string | null;
+  }): Promise<void> {
+    if (isDemoMode()) { await delay(); return; }
+    const snakeUpdates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (updates.titleMaster !== undefined) { snakeUpdates.title_master = updates.titleMaster; snakeUpdates.normalized_title = updates.titleMaster.toLowerCase(); }
+    if (updates.descriptionMaster !== undefined) snakeUpdates.description_master = updates.descriptionMaster;
+    if (updates.brandName !== undefined) snakeUpdates.brand_name = updates.brandName;
+    if (updates.model !== undefined) snakeUpdates.model = updates.model;
+    if (updates.manufacturer !== undefined) snakeUpdates.manufacturer = updates.manufacturer;
+    if (updates.productType !== undefined) snakeUpdates.product_type = updates.productType;
+    if (updates.condition !== undefined) snakeUpdates.condition = updates.condition;
+    if (updates.status !== undefined) snakeUpdates.status = updates.status;
+    if (updates.taxProductCode !== undefined) snakeUpdates.tax_product_code = updates.taxProductCode;
+    if (updates.taxUnitCode !== undefined) snakeUpdates.tax_unit_code = updates.taxUnitCode;
+    if (updates.taxObjectCode !== undefined) snakeUpdates.tax_object_code = updates.taxObjectCode;
+    if (updates.launchDate !== undefined) snakeUpdates.launch_date = updates.launchDate;
+    const { error } = await supabase.from('products').update(snakeUpdates).eq('id', id);
+    if (error) throw error;
+  },
+
+  async createProduct(data: {
+    internalProductNumber: string;
+    titleMaster: string;
+    descriptionMaster?: string;
+    brandName?: string;
+    model?: string;
+    manufacturer?: string;
+    productType?: string;
+    condition?: string;
+    status?: string;
+  }): Promise<Product | null> {
+    const id = `prd_${Date.now()}`;
+    const now = new Date().toISOString();
+    const row = {
+      id,
+      internal_product_number: data.internalProductNumber,
+      title_master: data.titleMaster,
+      normalized_title: data.titleMaster.toLowerCase(),
+      description_master: data.descriptionMaster ?? '',
+      brand_name: data.brandName ?? '',
+      model: data.model ?? '',
+      manufacturer: data.manufacturer ?? '',
+      product_type: data.productType ?? '',
+      condition: data.condition ?? 'NEW',
+      status: data.status ?? 'DRAFT',
+      variant_count: 0,
+      total_inventory: 0,
+      listing_count: 0,
+      created_by: 'system',
+      updated_by: 'system',
+      created_at: now,
+      updated_at: now,
+    };
+    if (isDemoMode()) {
+      await delay();
+      const p: Product = {
+        id: row.id,
+        internalProductNumber: row.internal_product_number,
+        titleMaster: row.title_master,
+        normalizedTitle: row.normalized_title,
+        descriptionMaster: row.description_master,
+        brandId: '', brandName: row.brand_name,
+        model: row.model, manufacturer: row.manufacturer,
+        productType: row.product_type,
+        condition: row.condition as Product['condition'],
+        status: row.status as Product['status'],
+        launchDate: null, taxProductCode: null, taxUnitCode: null, taxObjectCode: null,
+        defaultVariantId: null, primaryImageUrl: null,
+        variantCount: 0, totalInventory: 0, listingCount: 0,
+        createdBy: 'system', updatedBy: 'system',
+        createdAt: now, updatedAt: now, archivedAt: null,
+      };
+      mockProducts.push(p);
+      return p;
+    }
+    const { data: inserted, error } = await supabase.from('products').insert(row).select('*').maybeSingle();
+    if (error) throw error;
+    return inserted ? mapProduct(inserted as DbRow) : null;
+  },
+
+  async updateVariant(id: string, updates: {
+    purchaseCost?: number | null;
+    retailPrice?: number | null;
+    unitOfMeasure?: string | null;
+  }): Promise<void> {
+    if (isDemoMode()) { await delay(); return; }
+    const snakeUpdates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (updates.purchaseCost !== undefined) snakeUpdates.purchase_cost = updates.purchaseCost;
+    if (updates.retailPrice !== undefined) snakeUpdates.retail_price = updates.retailPrice;
+    if (updates.unitOfMeasure !== undefined) snakeUpdates.unit_of_measure = updates.unitOfMeasure;
+    const { error } = await supabase.from('product_variants').update(snakeUpdates).eq('id', id);
+    if (error) throw error;
+  },
+};
+
+// ---- Inventory Service (global) ----
+
+export const inventoryGlobalService = {
+  async getAllInventory(): Promise<InventoryBalance[]> {
+    if (isDemoMode()) {
+      await delay();
+      return mockInventory;
+    }
+    const { data, error } = await supabase.from('inventory_balances').select('*').order('updated_at', { ascending: false });
+    if (error) throw error;
+    return (data as DbRow[]).map(mapInventory);
+  },
+};
+
+// ---- Image Service (global) ----
+
+export const imageGlobalService = {
+  async getAllImages(): Promise<ProductImage[]> {
+    if (isDemoMode()) {
+      await delay();
+      return mockImages;
+    }
+    const { data, error } = await supabase.from('product_images').select('*').order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data as DbRow[]).map(mapImage);
+  },
+
+  async approveImage(id: string): Promise<void> {
+    if (isDemoMode()) { await delay(); return; }
+    const { error } = await supabase.from('product_images').update({ approved: true, updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) throw error;
+  },
+
+  async rejectImage(id: string): Promise<void> {
+    if (isDemoMode()) { await delay(); return; }
+    const { error } = await supabase.from('product_images').update({ status: 'REJECTED', updated_at: new Date().toISOString() }).eq('id', id);
+    if (error) throw error;
+  },
+};

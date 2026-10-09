@@ -29,30 +29,30 @@ export function ProductBasicInfoTab({ product }: Props) {
             <Label className="text-xs text-muted-foreground">
               Numero interno
             </Label>
-            <Input defaultValue={product.internalProductNumber} className="h-9" />
+            <Input defaultValue={product.internalProductNumber} className="h-9" data-field="internalProductNumber" />
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">Marca</Label>
-            <Input defaultValue={product.brandName} className="h-9" />
+            <Input defaultValue={product.brandName} className="h-9" data-field="brandName" />
           </div>
           <div className="space-y-1.5 sm:col-span-2">
             <Label className="text-xs text-muted-foreground">
               Nombre maestro
             </Label>
-            <Input defaultValue={product.titleMaster} className="h-9" />
+            <Input defaultValue={product.titleMaster} className="h-9" data-field="titleMaster" />
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">Modelo</Label>
-            <Input defaultValue={product.model} className="h-9" />
+            <Input defaultValue={product.model} className="h-9" data-field="model" />
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">Fabricante</Label>
-            <Input defaultValue={product.manufacturer} className="h-9" />
+            <Input defaultValue={product.manufacturer} className="h-9" data-field="manufacturer" />
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">Condicion</Label>
-            <Select defaultValue={product.condition}>
-              <SelectTrigger className="h-9">
+            <Select defaultValue={product.condition} onValueChange={(v) => { const el = document.querySelector('[data-field="condition"]'); if (el) el.setAttribute('data-value', v); }}>
+              <SelectTrigger className="h-9" data-field="condition" data-value={product.condition}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -65,8 +65,8 @@ export function ProductBasicInfoTab({ product }: Props) {
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">Estado</Label>
-            <Select defaultValue={product.status}>
-              <SelectTrigger className="h-9">
+            <Select defaultValue={product.status} onValueChange={(v) => { const el = document.querySelector('[data-field="status"]'); if (el) el.setAttribute('data-value', v); }}>
+              <SelectTrigger className="h-9" data-field="status" data-value={product.status}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -85,6 +85,7 @@ export function ProductBasicInfoTab({ product }: Props) {
               defaultValue={product.descriptionMaster}
               rows={4}
               className="resize-none"
+              data-field="descriptionMaster"
             />
           </div>
         </CardContent>
@@ -97,7 +98,7 @@ export function ProductBasicInfoTab({ product }: Props) {
         <CardContent className="space-y-4">
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">Tipo de producto</Label>
-            <Input defaultValue={product.productType} className="h-9" />
+            <Input defaultValue={product.productType} className="h-9" data-field="productType" />
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">
@@ -109,6 +110,7 @@ export function ProductBasicInfoTab({ product }: Props) {
                 product.launchDate ? product.launchDate.split('T')[0] : ''
               }
               className="h-9"
+              data-field="launchDate"
             />
           </div>
           <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground">

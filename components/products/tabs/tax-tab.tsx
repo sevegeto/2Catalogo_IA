@@ -27,20 +27,20 @@ export function ProductTaxTab({ product }: Props) {
           <Label className="text-xs text-muted-foreground">
             Codigo de producto fiscal
           </Label>
-          <Input defaultValue={product.taxProductCode ?? ''} className="h-9" />
+          <Input defaultValue={product.taxProductCode ?? ''} className="h-9" data-field="taxProductCode" />
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs text-muted-foreground">
             Codigo de unidad fiscal
           </Label>
-          <Input defaultValue={product.taxUnitCode ?? ''} className="h-9" />
+          <Input defaultValue={product.taxUnitCode ?? ''} className="h-9" data-field="taxUnitCode" />
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs text-muted-foreground">
             Codigo de objeto fiscal
           </Label>
-          <Select defaultValue={product.taxObjectCode ?? ''}>
-            <SelectTrigger className="h-9">
+          <Select defaultValue={product.taxObjectCode ?? ''} onValueChange={(v) => { const el = document.querySelector('[data-field="taxObjectCode"]'); if (el) el.setAttribute('data-value', v); }}>
+            <SelectTrigger className="h-9" data-field="taxObjectCode" data-value={product.taxObjectCode ?? ''}>
               <SelectValue placeholder="Seleccionar..." />
             </SelectTrigger>
             <SelectContent>

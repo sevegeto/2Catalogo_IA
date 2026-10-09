@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import {
   ArrowLeft,
   Save,
   MoreHorizontal,
-  ExternalLink,
+  Check,
 } from 'lucide-react';
 import Link from 'next/link';
 import { AppShell } from '@/components/layout/app-shell';
@@ -19,6 +19,7 @@ import {
   imageService,
   inventoryService,
   supplierService,
+  productMutations,
 } from '@/lib/services';
 import type {
   MarketplaceListing,
@@ -55,6 +56,9 @@ export default function ProductEditorPage({ params }: PageProps) {
   const [movements, setMovements] = useState<InventoryMovement[]>([]);
   const [suppliers, setSuppliers] = useState<ProductSupplier[]>([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const formRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const id = params.id;
@@ -85,6 +89,46 @@ export default function ProductEditorPage({ params }: PageProps) {
       setLoading(false);
     });
   }, [params.id]);
+
+  const handleSave = async () => {
+    if (!product || !formRef.current) return;
+    setSaving(true);
+    const container = formRef.current;
+    const getVal = (name: string): string | null => {
+      const el = container.querySelector(`[data-field="${name}"]`) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null;
+      return el ? el.value : null;
+    };
+    const getSelectVal = (name: string): string | null => {
+      const el = container.querySelector(`[data-field="${name}"]`) as HTMLElement | null;
+      return el?.getAttribute('data-value') ?? null;
+    };
+    try {
+      await productMutations.updateProduct(product.id, {
+        titleMaster: getVal('titleMaster') ?? undefined,
+        descriptionMaster: getVal('descriptionMaster') ?? undefined,
+        brandName: getVal('brandName') ?? undefined,
+        model: getVal('model') ?? undefined,
+        manufacturer: getVal('manufacturer') ?? undefined,
+        productType: getVal('productType') ?? undefined,
+        condition: getSelectVal('condition') ?? undefined,
+        status: getSelectVal('status') ?? undefined,
+        taxProductCode: getVal('taxProductCode') ?? undefined,
+        taxUnitCode: getVal('taxUnitCode') ?? undefined,
+        taxObjectCode: getSelectVal('taxObjectCode') ?? undefined,
+        launchDate: getVal('launchDate') || null,
+      });
+      setSaved(true);
+      setProduct((prev) => prev ? {
+        ...prev,
+        titleMaster: getVal('titleMaster') ?? prev.titleMaster,
+        updatedAt: new Date().toISOString(),
+      } : prev);
+      setTimeout(() => setSaved(false), 3000);
+    } catch {
+      setSaving(false);
+    }
+    setSaving(false);
+  };
 
   if (loading) {
     return (
@@ -127,9 +171,18 @@ export default function ProductEditorPage({ params }: PageProps) {
                 Volver
               </Button>
             </Link>
-            <Button size="sm" variant="default">
-              <Save className="mr-1.5 h-4 w-4" />
-              Guardar
+            <Button size="sm" variant="default" onClick={handleSave} disabled={saving}>
+              {saved ? (
+                <>
+                  <Check className="mr-1.5 h-4 w-4" />
+                  Guardado
+                </>
+              ) : (
+                <>
+                  <Save className="mr-1.5 h-4 w-4" />
+                  {saving ? 'Guardando...' : 'Guardar'}
+                </>
+              )}
             </Button>
             <Button size="sm" variant="ghost" className="h-8 w-8 p-0">
               <MoreHorizontal className="h-4 w-4" />
@@ -154,7 +207,7 @@ export default function ProductEditorPage({ params }: PageProps) {
         </span>
       </div>
 
-      <div className="p-6">
+      <div className="p-6" ref={formRef}>
         <Tabs defaultValue="basic" className="w-full">
           <TabsList className="flex h-auto flex-wrap bg-muted/60">
             <TabsTrigger value="basic">Info. basica</TabsTrigger>
