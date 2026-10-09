@@ -1,0 +1,768 @@
+// ============================================================
+// CatalogAI - Prisma Schema (Initial Design)
+// ============================================================
+// Target: MySQL (SiteGround) via Prisma ORM
+// PostgreSQL-compatible for future vector search migration.
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ---- Users & Roles ----
+
+model User {
+  id           String       @id @default(uuid())
+  email        String       @unique
+  passwordHash String       @map("password_hash")
+  displayName  String       @map("display_name")
+  role         UserRole     @default(VIEWER)
+  status       UserStatus   @default(ACTIVE)
+  lastLoginAt  DateTime?    @map("last_login_at")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @default(now()) @updatedAt @map("updated_at")
+
+  auditLogs    AuditLog[]
+  captures     Capture[]
+  matches      ProductMatch[]
+  movements    InventoryMovement[]
+  aiReviews    AiReview[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  OWNER
+  ADMIN
+  CATALOG_MANAGER
+  INVENTORY_MANAGER
+  REVIEWER
+  OPERATOR
+  VIEWER
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+// ---- Brands ----
+
+model Brand {
+  id             String       @id @default(uuid())
+  name           String
+  normalizedName String       @map("normalized_name")
+  aliasesJson    Json         @map("aliases_json")
+  status         BrandStatus  @default(ACTIVE)
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @default(now()) @updatedAt @map("updated_at")
+
+  products       Product[]
+
+  @@index([normalizedName])
+  @@map("brands")
+}
+
+enum BrandStatus {
+  ACTIVE
+  INACTIVE
+  MERGED
+}
+
+// ---- Categories ----
+
+model Category {
+  id       String      @id @default(uuid())
+  parentId String?     @map("parent_id")
+  name     String
+  slug     String
+  path     String
+  active   Boolean     @default(true)
+
+  parent   Category?   @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children Category[]  @relation("CategoryHierarchy")
+  products ProductCategoryAssignment[]
+
+  @@index([parentId])
+  @@map("categories")
+}
+
+model ProductCategoryAssignment {
+  productId  String   @map("product_id")
+  categoryId String   @map("category_id")
+  isPrimary  Boolean  @default(false) @map("is_primary")
+
+  product    Product  @relation(fields: [productId], references: [id])
+  category   Category @relation(fields: [categoryId], references: [id])
+
+  @@id([productId, categoryId])
+  @@map("product_category_assignments")
+}
+
+// ---- Products ----
+
+model Product {
+  id                    String            @id @default(uuid())
+  internalProductNumber String            @unique @map("internal_product_number")
+  titleMaster           String            @map("title_master")
+  normalizedTitle       String            @map("normalized_title")
+  descriptionMaster     Text              @map("description_master")
+  brandId               String            @map("brand_id")
+  model                 String
+  manufacturer          String
+  productType           String            @map("product_type")
+  condition             ProductCondition  @default(NEW)
+  status                ProductStatus     @default(DRAFT)
+  launchDate            DateTime?         @map("launch_date")
+  taxProductCode        String?           @map("tax_product_code")
+  taxUnitCode           String?           @map("tax_unit_code")
+  taxObjectCode         String?           @map("tax_object_code")
+  defaultVariantId      String?           @map("default_variant_id")
+  createdBy             String            @map("created_by")
+  updatedBy             String            @map("updated_by")
+  createdAt             DateTime          @default(now()) @map("created_at")
+  updatedAt             DateTime          @default(now()) @updatedAt @map("updated_at")
+  archivedAt            DateTime?         @map("archived_at")
+
+  brand                 Brand             @relation(fields: [brandId], references: [id])
+  variants              ProductVariant[]
+  identifiers           ProductIdentifier[]
+  aliases               ProductAlias[]
+  captures              Capture[]
+  matches               ProductMatch[]
+  listings              MarketplaceListing[]
+  images                ProductImage[]
+  suppliers             ProductSupplier[]
+  categoryAssignments   ProductCategoryAssignment[]
+  aiReviews             AiReview[]
+  auditLogs             AuditLog[]
+
+  @@index([brandId])
+  @@index([status])
+  @@map("products")
+}
+
+enum ProductCondition {
+  NEW
+  USED
+  REFURBISHED
+  OPEN_BOX
+}
+
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  IN_REVIEW
+  ARCHIVED
+  REJECTED
+}
+
+// ---- Variants ----
+
+model ProductVariant {
+  id                  String    @id @default(uuid())
+  productId           String    @map("product_id")
+  internalSku         String    @unique @map("internal_sku")
+  skuAlias            String?   @map("sku_alias")
+  variantName         String    @map("variant_name")
+  color               String?
+  size                String?
+  material            String?
+  capacity            String?
+  packageQuantity     Int?      @map("package_quantity")
+  unitOfMeasure       String?   @map("unit_of_measure")
+  packageWeightGrams  Int?      @map("package_weight_grams")
+  packageLengthCm     Float?    @map("package_length_cm")
+  packageWidthCm      Float?    @map("package_width_cm")
+  packageHeightCm     Float?    @map("package_height_cm")
+  purchaseCost        Decimal?  @map("purchase_cost") @db.Decimal(12, 2)
+  retailPrice         Decimal?  @map("retail_price") @db.Decimal(12, 2)
+  currency            String    @default("USD")
+  active              Boolean   @default(true)
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  product             Product   @relation(fields: [productId], references: [id])
+  identifiers         ProductIdentifier[]
+  aliases             ProductAlias[]
+  listings            MarketplaceListing[]
+  inventory           InventoryBalance[]
+  movements           InventoryMovement[]
+  images              ProductImage[]
+  suppliers           ProductSupplier[]
+
+  @@index([productId])
+  @@map("product_variants")
+}
+
+// ---- Identifiers ----
+
+model ProductIdentifier {
+  id                 String              @id @default(uuid())
+  productId          String              @map("product_id")
+  variantId          String?             @map("variant_id")
+  identifierType     IdentifierType      @map("identifier_type")
+  identifierValue    String              @map("identifier_value")
+  normalizedValue    String              @map("normalized_value")
+  countryCode        String?             @map("country_code")
+  source             String
+  verified           Boolean             @default(false)
+  verificationStatus VerificationStatus  @default(UNVERIFIED) @map("verification_status")
+  verificationNotes  String?             @map("verification_notes")
+  isPrimary          Boolean             @default(false) @map("is_primary")
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @default(now()) @updatedAt @map("updated_at")
+
+  product            Product             @relation(fields: [productId], references: [id])
+  variant            ProductVariant?     @relation(fields: [variantId], references: [id])
+
+  @@unique([identifierType, normalizedValue, countryCode])
+  @@index([productId])
+  @@index([variantId])
+  @@map("product_identifiers")
+}
+
+enum IdentifierType {
+  UPC_A
+  UPC_E
+  EAN_8
+  EAN_13
+  GTIN_12
+  GTIN_13
+  GTIN_14
+  ISBN
+  ASIN
+  MPN
+  MANUFACTURER_CODE
+  SUPPLIER_CODE
+  INTERNAL_BARCODE
+  OTHER
+}
+
+enum VerificationStatus {
+  UNVERIFIED
+  VERIFIED
+  CONFLICT
+  REJECTED
+}
+
+// ---- Aliases ----
+
+model ProductAlias {
+  id               String   @id @default(uuid())
+  productId        String   @map("product_id")
+  variantId        String?  @map("variant_id")
+  alias            String
+  normalizedAlias  String   @map("normalized_alias")
+  language         String   @default("es")
+  source           String
+  active           Boolean  @default(true)
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  product          Product  @relation(fields: [productId], references: [id])
+  variant          ProductVariant? @relation(fields: [variantId], references: [id])
+
+  @@index([productId])
+  @@map("product_aliases")
+}
+
+// ---- Captures ----
+
+model Capture {
+  id                     String              @id @default(uuid())
+  sourceType             CaptureSourceType   @map("source_type")
+  sourceUrl              String              @map("source_url")
+  sourceDomain           String              @map("source_domain")
+  externalReference      String?             @map("external_reference")
+  capturedTitle          String              @map("captured_title")
+  capturedDescription    Text                @map("captured_description")
+  capturedBrand          String?             @map("captured_brand")
+  capturedModel          String?             @map("captured_model")
+  capturedMpn            String?             @map("captured_mpn")
+  capturedUpc            String?             @map("captured_upc")
+  capturedAsin           String?             @map("captured_asin")
+  capturedPrice          Decimal?            @map("captured_price") @db.Decimal(12, 2)
+  capturedCurrency       String?             @map("captured_currency")
+  capturedAttributesJson Json?               @map("captured_attributes_json")
+  capturedImagesJson     Json?               @map("captured_images_json")
+  rawPayloadJson         Json?               @map("raw_payload_json")
+  status                 CaptureStatus       @default(RECEIVED)
+  assignedProductId      String?             @map("assigned_product_id")
+  assignedVariantId      String?             @map("assigned_variant_id")
+  capturedBy             String?             @map("captured_by")
+  capturedAt             DateTime            @default(now()) @map("captured_at")
+  processedAt            DateTime?           @map("processed_at")
+
+  assignedProduct        Product?            @relation(fields: [assignedProductId], references: [id])
+  capturedByUser         User?               @relation(fields: [capturedBy], references: [id])
+  matches                ProductMatch[]
+  aiReviews              AiReview[]
+
+  @@index([status])
+  @@index([sourceDomain])
+  @@map("captures")
+}
+
+enum CaptureSourceType {
+  CHROME_EXTENSION
+  GOOGLE_SHEETS
+  MANUAL
+  FILE_IMPORT
+  API
+}
+
+enum CaptureStatus {
+  RECEIVED
+  NORMALIZING
+  MATCHING
+  POSSIBLE_MATCH
+  MATCHED
+  NEW_PRODUCT_CANDIDATE
+  NEEDS_REVIEW
+  REJECTED
+  COMPLETED
+  ERROR
+}
+
+// ---- Matches ----
+
+model ProductMatch {
+  id                   String              @id @default(uuid())
+  captureId            String              @map("capture_id")
+  candidateProductId   String              @map("candidate_product_id")
+  candidateVariantId   String?             @map("candidate_variant_id")
+  totalScore           Float               @map("total_score")
+  confidencePercentage Float               @map("confidence_percentage")
+  identifierScore      Float               @map("identifier_score")
+  brandScore           Float               @map("brand_score")
+  modelScore           Float               @map("model_score")
+  attributeScore       Float               @map("attribute_score")
+  textScore            Float               @map("text_score")
+  imageScore           Float               @map("image_score")
+  aiScore              Float               @default(0) @map("ai_score")
+  matchReasonsJson     Json                @map("match_reasons_json")
+  conflictsJson        Json                @default("[]") @map("conflicts_json")
+  decision             MatchDecision       @default(PENDING)
+  decisionSource       String              @default("SYSTEM") @map("decision_source")
+  reviewedBy           String?             @map("reviewed_by")
+  reviewedAt           DateTime?           @map("reviewed_at")
+  createdAt            DateTime            @default(now()) @map("created_at")
+
+  capture              Capture             @relation(fields: [captureId], references: [id])
+  candidateProduct     Product             @relation(fields: [candidateProductId], references: [id])
+  reviewer             User?               @relation(fields: [reviewedBy], references: [id])
+
+  @@index([captureId])
+  @@index([candidateProductId])
+  @@map("product_matches")
+}
+
+enum MatchDecision {
+  PENDING
+  AUTO_APPROVED
+  HUMAN_APPROVED
+  REJECTED
+  NOT_SAME_PRODUCT
+  NEEDS_MORE_INFORMATION
+}
+
+// ---- Marketplace Accounts ----
+
+model MarketplaceAccount {
+  id                    String      @id @default(uuid())
+  marketplace           Marketplace
+  accountName           String      @map("account_name")
+  sellerIdentifier      String      @map("seller_identifier")
+  active                Boolean     @default(true)
+  credentialsReference  String?     @map("credentials_reference")
+  configurationJson     Json?       @map("configuration_json")
+  createdAt             DateTime    @default(now()) @map("created_at")
+  updatedAt             DateTime    @default(now()) @updatedAt @map("updated_at")
+
+  listings              MarketplaceListing[]
+
+  @@unique([marketplace, sellerIdentifier])
+  @@map("marketplace_accounts")
+}
+
+enum Marketplace {
+  MERCADOLIBRE
+  AMAZON
+  SHOPIFY
+}
+
+// ---- Listings ----
+
+model MarketplaceListing {
+  id                    String        @id @default(uuid())
+  productId             String        @map("product_id")
+  variantId             String?       @map("variant_id")
+  accountId             String        @map("account_id")
+  marketplace           Marketplace
+  marketplaceListingId  String        @map("marketplace_listing_id")
+  marketplaceCatalogId  String?       @map("marketplace_catalog_id")
+  sellerSku             String?       @map("seller_sku")
+  listingTitle          String        @map("listing_title")
+  listingUrl            String?       @map("listing_url")
+  listingStatus         ListingStatus @default(DRAFT) @map("listing_status")
+  marketplaceCategoryId String?       @map("marketplace_category_id")
+  price                 Decimal       @db.Decimal(12, 2)
+  currency              String        @default("USD")
+  availableQuantity     Int?          @map("available_quantity")
+  listingType           String?       @map("listing_type")
+  rawDataJson           Json?         @map("raw_data_json")
+  lastSyncedAt          DateTime?     @map("last_synced_at")
+  createdAt             DateTime      @default(now()) @map("created_at")
+  updatedAt             DateTime      @default(now()) @updatedAt @map("updated_at")
+
+  product               Product       @relation(fields: [productId], references: [id])
+  variant               ProductVariant? @relation(fields: [variantId], references: [id])
+  account               MarketplaceAccount @relation(fields: [accountId], references: [id])
+  variantMappings       ListingVariantMapping[]
+  aiReviews             AiReview[]
+
+  @@unique([marketplace, accountId, marketplaceListingId])
+  @@index([productId])
+  @@map("marketplace_listings")
+}
+
+enum ListingStatus {
+  ACTIVE
+  PAUSED
+  CLOSED
+  DRAFT
+  ERROR
+  UNDER_REVIEW
+}
+
+model ListingVariantMapping {
+  id                    String   @id @default(uuid())
+  listingId             String   @map("listing_id")
+  variantId             String   @map("variant_id")
+  marketplaceVariantId  String?  @map("marketplace_variant_id")
+  sellerSku             String?  @map("seller_sku")
+  attributeValuesJson   Json?    @map("attribute_values_json")
+  active                Boolean  @default(true)
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @default(now()) @updatedAt @map("updated_at")
+
+  listing               MarketplaceListing @relation(fields: [listingId], references: [id])
+  variant               ProductVariant     @relation(fields: [variantId], references: [id])
+
+  @@index([listingId])
+  @@map("listing_variant_mappings")
+}
+
+// ---- Warehouses ----
+
+model Warehouse {
+  id          String              @id @default(uuid())
+  name        String
+  code        String              @unique
+  addressJson Json                @map("address_json")
+  isDefault   Boolean             @default(false) @map("is_default")
+  active      Boolean             @default(true)
+
+  locations   WarehouseLocation[]
+  inventory   InventoryBalance[]
+  movements   InventoryMovement[]
+
+  @@map("warehouses")
+}
+
+model WarehouseLocation {
+  id           String     @id @default(uuid())
+  warehouseId  String     @map("warehouse_id")
+  locationCode String     @unique @map("location_code")
+  aisle        String
+  shelf        String
+  bin          String
+  description  String?
+  active       Boolean    @default(true)
+
+  warehouse    Warehouse  @relation(fields: [warehouseId], references: [id])
+  inventory    InventoryBalance[]
+  movements    InventoryMovement[]
+
+  @@index([warehouseId])
+  @@map("warehouse_locations")
+}
+
+// ---- Inventory ----
+
+model InventoryBalance {
+  id           String            @id @default(uuid())
+  variantId    String            @map("variant_id")
+  warehouseId  String            @map("warehouse_id")
+  locationId   String?           @map("location_id")
+  onHand       Int               @map("on_hand")
+  available    Int               @default(0)
+  reserved     Int               @default(0)
+  occupied     Int               @default(0)
+  damaged      Int               @default(0)
+  incoming     Int               @default(0)
+  updatedAt    DateTime          @default(now()) @updatedAt @map("updated_at")
+
+  variant      ProductVariant    @relation(fields: [variantId], references: [id])
+  warehouse    Warehouse         @relation(fields: [warehouseId], references: [id])
+  location     WarehouseLocation? @relation(fields: [locationId], references: [id])
+
+  @@unique([variantId, warehouseId, locationId])
+  @@index([variantId])
+  @@map("inventory_balances")
+}
+
+model InventoryMovement {
+  id               String               @id @default(uuid())
+  variantId        String               @map("variant_id")
+  warehouseId      String               @map("warehouse_id")
+  locationId       String?              @map("location_id")
+  movementType     InventoryMovementType @map("movement_type")
+  quantity         Int
+  previousQuantity Int                  @map("previous_quantity")
+  resultingQuantity Int                 @map("resulting_quantity")
+  referenceType    String?              @map("reference_type")
+  referenceId      String?              @map("reference_id")
+  notes            String?
+  createdBy        String               @map("created_by")
+  createdAt        DateTime             @default(now()) @map("created_at")
+
+  variant          ProductVariant       @relation(fields: [variantId], references: [id])
+  warehouse        Warehouse            @relation(fields: [warehouseId], references: [id])
+  location         WarehouseLocation?   @relation(fields: [locationId], references: [id])
+  user             User                 @relation(fields: [createdBy], references: [id])
+
+  @@index([variantId])
+  @@index([warehouseId])
+  @@map("inventory_movements")
+}
+
+enum InventoryMovementType {
+  PURCHASE_RECEIPT
+  SALE
+  RETURN
+  TRANSFER_IN
+  TRANSFER_OUT
+  ADJUSTMENT_IN
+  ADJUSTMENT_OUT
+  RESERVATION
+  RELEASE_RESERVATION
+  DAMAGE
+  INITIAL_BALANCE
+}
+
+// ---- Suppliers ----
+
+model Supplier {
+  id           String   @id @default(uuid())
+  companyName  String   @map("company_name")
+  contactName  String?  @map("contact_name")
+  email        String?
+  phone        String?
+  website      String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
+
+  products     ProductSupplier[]
+
+  @@map("suppliers")
+}
+
+model ProductSupplier {
+  id                  String    @id @default(uuid())
+  productId           String    @map("product_id")
+  variantId           String?   @map("variant_id")
+  supplierId          String    @map("supplier_id")
+  supplierSku         String?   @map("supplier_sku")
+  supplierUrl         String?   @map("supplier_url")
+  purchaseCost        Decimal   @map("purchase_cost") @db.Decimal(12, 2)
+  currency            String    @default("USD")
+  minimumOrderQuantity Int?     @map("minimum_order_quantity")
+  purchaseMultiple    Int?      @map("purchase_multiple")
+  leadTimeDays        Int?      @map("lead_time_days")
+  isDefault           Boolean   @default(false) @map("is_default")
+  active              Boolean   @default(true)
+  updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  product             Product   @relation(fields: [productId], references: [id])
+  variant             ProductVariant? @relation(fields: [variantId], references: [id])
+  supplier            Supplier  @relation(fields: [supplierId], references: [id])
+
+  @@index([productId])
+  @@index([supplierId])
+  @@map("product_suppliers")
+}
+
+// ---- Images ----
+
+model ProductImage {
+  id               String      @id @default(uuid())
+  productId        String      @map("product_id")
+  variantId        String?     @map("variant_id")
+  originalUrl      String      @map("original_url")
+  storageProvider  String      @map("storage_provider")
+  storageFileId    String?     @map("storage_file_id")
+  storagePath      String?     @map("storage_path")
+  publicDeliveryUrl String?    @map("public_delivery_url")
+  mimeType         String      @map("mime_type")
+  originalFilename String      @map("original_filename")
+  fileSizeBytes    Int?        @map("file_size_bytes")
+  width            Int?
+  height           Int?
+  sha256           String?     @unique
+  perceptualHash   String?     @map("perceptual_hash")
+  imageType        ImageType   @map("image_type")
+  displayOrder     Int         @default(0) @map("display_order")
+  altText          String?     @map("alt_text")
+  source           String
+  status           ImageStatus @default(URL_CAPTURED)
+  approved         Boolean     @default(false)
+  generatedByAi    Boolean     @default(false) @map("generated_by_ai")
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @default(now()) @updatedAt @map("updated_at")
+
+  product          Product     @relation(fields: [productId], references: [id])
+  variant          ProductVariant? @relation(fields: [variantId], references: [id])
+
+  @@index([productId])
+  @@index([sha256])
+  @@map("product_images")
+}
+
+enum ImageType {
+  MAIN
+  ALTERNATE
+  DETAIL
+  DIMENSIONS
+  LIFESTYLE
+  PACKAGING
+  VARIANT
+  GENERATED
+  DOCUMENT
+}
+
+enum ImageStatus {
+  URL_CAPTURED
+  QUEUED
+  DOWNLOADING
+  DOWNLOADED
+  PROCESSING
+  READY
+  REJECTED
+  ERROR
+}
+
+// ---- Jobs ----
+
+model Job {
+  id             String     @id @default(uuid())
+  jobType        JobType    @map("job_type")
+  status         JobStatus  @default(PENDING)
+  priority       Int        @default(5)
+  payloadJson    Json       @map("payload_json")
+  resultJson     Json?      @map("result_json")
+  assignedWorker String?    @map("assigned_worker")
+  attempts       Int        @default(0)
+  maxAttempts    Int        @default(3) @map("max_attempts")
+  scheduledAt    DateTime   @default(now()) @map("scheduled_at")
+  startedAt      DateTime?  @map("started_at")
+  completedAt    DateTime?  @map("completed_at")
+  heartbeatAt    DateTime?  @map("heartbeat_at")
+  errorMessage   String?    @map("error_message") @db.Text
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @default(now()) @updatedAt @map("updated_at")
+
+  aiReviews      AiReview[]
+
+  @@index([status, scheduledAt])
+  @@index([jobType])
+  @@map("jobs")
+}
+
+enum JobType {
+  NORMALIZE_PRODUCT
+  MATCH_PRODUCT
+  DETECT_DUPLICATES
+  GENERATE_EMBEDDING
+  COMPARE_IMAGES
+  IMPROVE_TITLE
+  IMPROVE_DESCRIPTION
+  GENERATE_MARKETPLACE_CONTENT
+  DOWNLOAD_IMAGE
+  PROCESS_IMAGE
+  SYNC_GOOGLE_SHEETS
+  SYNC_MARKETPLACE_LISTINGS
+  AUDIT_LISTING
+  FIND_MISSING_IDENTIFIERS
+}
+
+enum JobStatus {
+  PENDING
+  CLAIMED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+  TIMEOUT
+}
+
+// ---- AI Reviews ----
+
+model AiReview {
+  id                   String    @id @default(uuid())
+  productId            String?   @map("product_id")
+  variantId            String?   @map("variant_id")
+  captureId            String?   @map("capture_id")
+  listingId            String?   @map("listing_id")
+  jobId                String?   @map("job_id")
+  provider             String
+  model                String
+  promptVersion        String    @map("prompt_version")
+  inputHash            String    @map("input_hash")
+  responseJson         Json      @map("response_json")
+  confidence           Float
+  requiresHumanReview  Boolean   @default(false) @map("requires_human_review")
+  approved             Boolean   @default(false)
+  approvedBy           String?   @map("approved_by")
+  approvedAt           DateTime? @map("approved_at")
+  createdAt            DateTime  @default(now()) @map("created_at")
+
+  product              Product?  @relation(fields: [productId], references: [id])
+  capture              Capture?  @relation(fields: [captureId], references: [id])
+  listing              MarketplaceListing? @relation(fields: [listingId], references: [id])
+  job                  Job?      @relation(fields: [jobId], references: [id])
+  approver             User?     @relation(fields: [approvedBy], references: [id])
+
+  @@index([productId])
+  @@index([captureId])
+  @@map("ai_reviews")
+}
+
+// ---- Audit Logs ----
+
+model AuditLog {
+  id          String    @id @default(uuid())
+  userId      String?   @map("user_id")
+  action      String
+  entityType  String    @map("entity_type")
+  entityId    String    @map("entity_id")
+  beforeJson  Json?     @map("before_json")
+  afterJson   Json?     @map("after_json")
+  ipAddress   String?   @map("ip_address")
+  userAgent   String?   @map("user_agent")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  user        User?     @relation(fields: [userId], references: [id])
+  product     Product?  @relation(fields: [entityId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@map("audit_logs")
+}

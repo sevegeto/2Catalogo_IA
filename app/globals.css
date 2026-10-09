@@ -1,0 +1,85 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 98%;
+    --foreground: 222 22% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 22% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 22% 12%;
+    --primary: 200 85% 35%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 20% 96%;
+    --secondary-foreground: 222 22% 18%;
+    --muted: 210 20% 95%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 200 80% 94%;
+    --accent-foreground: 200 85% 25%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 14% 90%;
+    --input: 220 14% 88%;
+    --ring: 200 85% 35%;
+    --chart-1: 200 85% 40%;
+    --chart-2: 160 60% 40%;
+    --chart-3: 30 80% 50%;
+    --chart-4: 10 75% 55%;
+    --chart-5: 45 80% 50%;
+    --radius: 0.5rem;
+  }
+  .dark {
+    --background: 222 25% 8%;
+    --foreground: 210 20% 92%;
+    --card: 222 22% 10%;
+    --card-foreground: 210 20% 92%;
+    --popover: 222 22% 10%;
+    --popover-foreground: 210 20% 92%;
+    --primary: 200 80% 50%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 222 18% 16%;
+    --secondary-foreground: 210 20% 92%;
+    --muted: 222 18% 14%;
+    --muted-foreground: 215 15% 55%;
+    --accent: 200 40% 18%;
+    --accent-foreground: 200 80% 70%;
+    --destructive: 0 62% 42%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 222 15% 20%;
+    --input: 222 15% 18%;
+    --ring: 200 80% 50%;
+    --chart-1: 200 80% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 75% 55%;
+    --chart-4: 10 70% 55%;
+    --chart-5: 45 75% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: 'cv11', 'ss01';
+    font-variation-settings: normal;
+  }
+
+  /* Scrollbar styling for ERP feel */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-muted-foreground/30;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/50;
+  }
+}
