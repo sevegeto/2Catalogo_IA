@@ -73,7 +73,16 @@
         return;
       }
 
-      const response = await chrome.tabs.sendMessage(tab.id, { type: 'CAPTURE_PRODUCT' });
+      let response;
+      try {
+        response = await chrome.tabs.sendMessage(tab.id, { type: 'CAPTURE_PRODUCT' });
+      } catch (messageError) {
+        if (!chrome.scripting || !tab.url || /^(chrome|edge|about|https:\/\/chromewebstore\.google\.com)/i.test(tab.url)) {
+          throw new Error('Chrome no permite leer esta pagina. Abre una pagina normal de producto y vuelve a intentarlo.');
+        }
+        await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
+        response = await chrome.tabs.sendMessage(tab.id, { type: 'CAPTURE_PRODUCT' });
+      }
 
       if (!response || !response.success) {
         showStatus(response?.error || 'No se pudo extraer el producto', 'error');

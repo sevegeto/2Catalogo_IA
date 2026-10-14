@@ -3,7 +3,7 @@
   "name": "CatalogAI Capture",
   "version": "1.0.0",
   "description": "Captura productos desde cualquier pagina web y envialos a CatalogAI",
-  "permissions": ["activeTab", "storage", "contextMenus"],
+  "permissions": ["activeTab", "storage", "contextMenus", "scripting"],
   "host_permissions": ["<all_urls>"],
   "action": {
     "default_popup": "popup.html",
