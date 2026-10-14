@@ -34,6 +34,48 @@
     return match ? match[1] : '';
   }
 
+  function getProductSchemas() {
+    const products = [];
+    document.querySelectorAll('script[type="application/ld+json"]').forEach((script) => {
+      try {
+        const parsed = JSON.parse(script.textContent || '');
+        const values = Array.isArray(parsed) ? parsed : [parsed];
+        values.forEach((value) => {
+          const graph = Array.isArray(value?.['@graph']) ? value['@graph'] : [value];
+          graph.forEach((entry) => {
+            const types = Array.isArray(entry?.['@type']) ? entry['@type'] : [entry?.['@type']];
+            if (types.some((type) => String(type).toLowerCase() === 'product')) products.push(entry);
+          });
+        });
+      } catch (_error) {
+        // Ignore invalid structured data from the page.
+      }
+    });
+    return products;
+  }
+
+  function getProductSchema() {
+    return getProductSchemas()[0] || null;
+  }
+
+  function schemaText(value) {
+    if (typeof value === 'string') return cleanText(value);
+    if (value && typeof value === 'object' && typeof value.name === 'string') return cleanText(value.name);
+    return '';
+  }
+
+  function schemaPrice(product) {
+    const offers = Array.isArray(product?.offers) ? product.offers[0] : product?.offers;
+    const value = offers?.price ?? product?.price;
+    const number = Number.parseFloat(String(value || '').replace(/,/g, ''));
+    return Number.isFinite(number) && number > 0 ? number : null;
+  }
+
+  function isUsableBrand(value) {
+    const normalized = cleanText(value).toLowerCase();
+    return Boolean(normalized) && normalized.length < 60 && !/^(add to cart|buy now|shop now|visit store|official store|na|n\/a|none)$/i.test(normalized);
+  }
+
   // ----------------------------------------------------------------
   // Site-specific extractors (called first, then generic fallback)
   // ----------------------------------------------------------------
@@ -122,16 +164,22 @@
       }
     }
     if (hostname.includes('gun.deals')) {
-      // gun.deals shows multiple store prices; grab the lowest numeric price text
-      const prices = [];
-      document.querySelectorAll('.price, [class*="price"]').forEach((el) => {
-        const m = el.textContent.match(/\$\s*([\d.,]+)/);
-        if (m) {
-          const v = parseFloat(m[1].replace(/,/g, ''));
-          if (v > 0) prices.push(v);
+      const titlePrice = extractTitle().match(/(?:-|–|—|:)\s*\$\s*([\d.,]+)/);
+      if (titlePrice) return parseFloat(titlePrice[1].replace(/,/g, ''));
+
+      const selectors = [
+        '[data-price]', '.deal-price', '.current-price', '.product-price',
+        '.price-current', '.deal-card .price', '.deal-listing .price',
+      ];
+      for (const selector of selectors) {
+        const el = document.querySelector(selector);
+        const match = el?.textContent?.match(/\$\s*([\d.,]+)/);
+        if (match) {
+          const value = parseFloat(match[1].replace(/,/g, ''));
+          if (value > 0) return value;
         }
-      });
-      return prices.length ? Math.min(...prices) : null;
+      }
+      return null;
     }
     if (hostname.includes('academy.com')) {
       const el =
@@ -179,8 +227,11 @@
   // Generic extractors (fallback)
   // ----------------------------------------------------------------
   function extractPrice() {
+    const schemaPriceValue = schemaPrice(getProductSchema());
+    if (!hostname.includes('gun.deals') && schemaPriceValue !== null) return schemaPriceValue;
+
     const sitePrice = extractPriceSiteSpecific();
-    if (sitePrice !== null) return sitePrice;
+    if (sitePrice !== null || hostname.includes('gun.deals')) return sitePrice;
 
     const priceSelectors = [
       '[itemprop="price"]', '.product-price', '.current-price',
@@ -221,6 +272,12 @@
 
   function extractImages() {
     const images = [];
+    const schema = getProductSchema();
+    const schemaImages = Array.isArray(schema?.image) ? schema.image : [schema?.image];
+    schemaImages.forEach((image) => {
+      const url = typeof image === 'string' ? image : image?.url;
+      if (url && /^https?:\/\//i.test(url) && !images.includes(url)) images.push(url);
+    });
 
     // Site-specific selectors first
     let siteSelectors = [];
@@ -269,7 +326,10 @@
 
   function extractBrand() {
     const site = extractBrandSiteSpecific();
-    if (site && site.length < 60) return cleanText(site);
+    if (isUsableBrand(site)) return cleanText(site);
+
+    const schemaBrand = schemaText(getProductSchema()?.brand || getProductSchema()?.manufacturer);
+    if (isUsableBrand(schemaBrand)) return schemaBrand;
 
     const brandSelectors = [
       '[itemprop="brand"] [itemprop="name"]',
@@ -281,13 +341,16 @@
       const el = document.querySelector(sel);
       if (el) {
         const val = el.getAttribute('content') || el.textContent.trim();
-        if (val && val.length < 60) return cleanText(val);
+        if (isUsableBrand(val)) return cleanText(val);
       }
     }
     return cleanText(getMeta('product:brand'));
   }
 
   function extractModel() {
+    const schemaModel = schemaText(getProductSchema()?.model);
+    if (schemaModel) return schemaModel;
+
     if (hostname.includes('amazon.')) {
       const rows = document.querySelectorAll('#productDetails_techSpec_section_1 tr, #detailBullets_feature_div li');
       for (const row of rows) {
@@ -310,6 +373,9 @@
   }
 
   function extractMPN() {
+    const schemaMpn = schemaText(getProductSchema()?.mpn);
+    if (schemaMpn) return schemaMpn;
+
     if (hostname.includes('amazon.')) {
       const rows = document.querySelectorAll('#productDetails_techSpec_section_1 tr, #detailBullets_feature_div li');
       for (const row of rows) {
@@ -337,6 +403,10 @@
   }
 
   function extractUPC() {
+    const schema = getProductSchema();
+    const schemaUpc = cleanUPC(schema?.gtin13 || schema?.gtin12 || schema?.gtin14 || schema?.gtin || '');
+    if (schemaUpc) return schemaUpc;
+
     const site = extractUPCSiteSpecific();
     if (site) return site;
     const selectors = ['[itemprop="gtin13"]', '[itemprop="gtin12"]', '[itemprop="gtin"]', '[data-upc]', '[data-gtin]', '.upc', '.gtin'];
