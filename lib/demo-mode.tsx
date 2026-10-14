@@ -1,5 +1,6 @@
 'use client';
 
+import { DEMO_STORAGE_KEY, isDemoMode, isSupabaseConfigured } from '@/lib/runtime-config';
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 
 interface DemoModeContextValue {
@@ -9,26 +10,27 @@ interface DemoModeContextValue {
 }
 
 const DemoModeContext = createContext<DemoModeContextValue>({
-  demoMode: false,
+  demoMode: !isSupabaseConfigured,
   setDemoMode: () => {},
   toggleDemoMode: () => {},
 });
 
-const STORAGE_KEY = 'catalogai-demo-mode';
-
 export function DemoModeProvider({ children }: { children: ReactNode }) {
-  const [demoMode, setDemoModeState] = useState(false);
+  const [demoMode, setDemoModeState] = useState(!isSupabaseConfigured);
 
   useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored !== null) {
-      setDemoModeState(stored === 'true');
-    }
+    setDemoModeState(isDemoMode());
   }, []);
 
   const setDemoMode = (value: boolean) => {
-    setDemoModeState(value);
-    localStorage.setItem(STORAGE_KEY, String(value));
+    if (!value && !isSupabaseConfigured) return;
+    try {
+      localStorage.setItem(DEMO_STORAGE_KEY, String(value));
+    } catch {
+      return;
+    }
+    // Reload queries and discard state from the previous data source.
+    window.location.reload();
   };
 
   const toggleDemoMode = () => setDemoMode(!demoMode);

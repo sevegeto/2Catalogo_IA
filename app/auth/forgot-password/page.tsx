@@ -2,7 +2,8 @@
 
 import { FormEvent, useState } from 'react';
 import { CheckCircle2, KeyRound, Loader2 } from 'lucide-react';
-import { supabase } from '@/lib/supabase/client';
+import { isSupabaseConfigured } from '@/lib/runtime-config';
+import { getSupabase } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,9 +17,13 @@ export default function ForgotPasswordPage() {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError('');
+    if (!isSupabaseConfigured) {
+      setError('Configura Supabase para recuperar contraseñas.');
+      return;
+    }
     setSending(true);
 
-    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+    const { error: resetError } = await getSupabase().auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/auth/reset-password`,
     });
 

@@ -22,7 +22,10 @@ import {
   mockVariants,
   mockWarehouses,
 } from '@/lib/mock/data';
-import { supabase } from '@/lib/supabase/client';
+import { getSupabase } from '@/lib/supabase/client';
+import { findCaptureMatches } from '@/lib/captures/matching';
+import { captureAssets } from '@/lib/captures/import';
+import { isDemoMode } from '@/lib/runtime-config';
 import type {
   AuditLog,
   Capture,
@@ -383,12 +386,6 @@ function mapActivity(r: DbRow): DashboardActivity {
   };
 }
 
-// Helper: check demo mode flag (set by DemoModeProvider via localStorage)
-function isDemoMode(): boolean {
-  if (typeof window === 'undefined') return false;
-  return localStorage.getItem('catalogai-demo-mode') === 'true';
-}
-
 const delay = (ms = 100) => new Promise((r) => setTimeout(r, ms));
 
 // ---- Product Service ----
@@ -399,7 +396,7 @@ export const productService = {
       await delay();
       return mockProducts;
     }
-    const { data, error } = await supabase.from('products').select('*').order('updated_at', { ascending: false });
+    const { data, error } = await getSupabase().from('products').select('*').order('updated_at', { ascending: false });
     if (error) throw error;
     return (data as DbRow[]).map(mapProduct);
   },
@@ -409,7 +406,7 @@ export const productService = {
       await delay();
       return mockProducts.find((p) => p.id === id) ?? null;
     }
-    const { data, error } = await supabase.from('products').select('*').eq('id', id).maybeSingle();
+    const { data, error } = await getSupabase().from('products').select('*').eq('id', id).maybeSingle();
     if (error) throw error;
     return data ? mapProduct(data as DbRow) : null;
   },
@@ -419,7 +416,7 @@ export const productService = {
       await delay();
       return mockVariants.filter((v) => v.productId === productId);
     }
-    const { data, error } = await supabase.from('product_variants').select('*').eq('product_id', productId);
+    const { data, error } = await getSupabase().from('product_variants').select('*').eq('product_id', productId);
     if (error) throw error;
     return (data as DbRow[]).map(mapVariant);
   },
@@ -429,7 +426,7 @@ export const productService = {
       await delay();
       return mockIdentifiers.filter((i) => i.productId === productId);
     }
-    const { data, error } = await supabase.from('product_identifiers').select('*').eq('product_id', productId);
+    const { data, error } = await getSupabase().from('product_identifiers').select('*').eq('product_id', productId);
     if (error) throw error;
     return (data as DbRow[]).map(mapIdentifier);
   },
@@ -443,7 +440,7 @@ export const captureService = {
       await delay();
       return mockCaptures;
     }
-    const { data, error } = await supabase.from('captures').select('*').order('captured_at', { ascending: false });
+    const { data, error } = await getSupabase().from('captures').select('*').order('captured_at', { ascending: false });
     if (error) throw error;
     return (data as DbRow[]).map(mapCapture);
   },
@@ -453,7 +450,7 @@ export const captureService = {
       await delay();
       return mockCaptures.find((c) => c.id === id) ?? null;
     }
-    const { data, error } = await supabase.from('captures').select('*').eq('id', id).maybeSingle();
+    const { data, error } = await getSupabase().from('captures').select('*').eq('id', id).maybeSingle();
     if (error) throw error;
     return data ? mapCapture(data as DbRow) : null;
   },
@@ -462,12 +459,23 @@ export const captureService = {
 // ---- Match Service ----
 
 export const matchService = {
+  async getMatchesByCapture(captureId: string): Promise<ProductMatch[]> {
+    if (isDemoMode()) {
+      await delay();
+      return mockMatches.filter((match) => match.captureId === captureId);
+    }
+    const { data, error } = await getSupabase().from('product_matches').select('*')
+      .eq('capture_id', captureId).order('total_score', { ascending: false });
+    if (error) throw error;
+    return (data as DbRow[]).map(mapMatch);
+  },
+
   async getMatches(): Promise<ProductMatch[]> {
     if (isDemoMode()) {
       await delay();
       return mockMatches;
     }
-    const { data, error } = await supabase.from('product_matches').select('*').order('created_at', { ascending: false });
+    const { data, error } = await getSupabase().from('product_matches').select('*').order('created_at', { ascending: false });
     if (error) throw error;
     return (data as DbRow[]).map(mapMatch);
   },
@@ -477,7 +485,7 @@ export const matchService = {
       await delay();
       return mockMatches.find((m) => m.id === id) ?? null;
     }
-    const { data, error } = await supabase.from('product_matches').select('*').eq('id', id).maybeSingle();
+    const { data, error } = await getSupabase().from('product_matches').select('*').eq('id', id).maybeSingle();
     if (error) throw error;
     return data ? mapMatch(data as DbRow) : null;
   },
@@ -491,7 +499,7 @@ export const listingService = {
       await delay();
       return mockListings;
     }
-    const { data, error } = await supabase.from('marketplace_listings').select('*').order('updated_at', { ascending: false });
+    const { data, error } = await getSupabase().from('marketplace_listings').select('*').order('updated_at', { ascending: false });
     if (error) throw error;
     return (data as DbRow[]).map(mapListing);
   },
@@ -501,7 +509,7 @@ export const listingService = {
       await delay();
       return mockListings.filter((l) => l.productId === productId);
     }
-    const { data, error } = await supabase.from('marketplace_listings').select('*').eq('product_id', productId);
+    const { data, error } = await getSupabase().from('marketplace_listings').select('*').eq('product_id', productId);
     if (error) throw error;
     return (data as DbRow[]).map(mapListing);
   },
@@ -515,7 +523,7 @@ export const inventoryService = {
       await delay();
       return mockInventory.filter((i) => i.variantId === variantId);
     }
-    const { data, error } = await supabase.from('inventory_balances').select('*').eq('variant_id', variantId);
+    const { data, error } = await getSupabase().from('inventory_balances').select('*').eq('variant_id', variantId);
     if (error) throw error;
     return (data as DbRow[]).map(mapInventory);
   },
@@ -526,10 +534,10 @@ export const inventoryService = {
       const variantIds = mockVariants.filter((v) => v.productId === productId).map((v) => v.id);
       return mockInventory.filter((i) => variantIds.includes(i.variantId));
     }
-    const { data: variants } = await supabase.from('product_variants').select('id').eq('product_id', productId);
+    const { data: variants } = await getSupabase().from('product_variants').select('id').eq('product_id', productId);
     const variantIds = (variants as DbRow[])?.map((v) => v.id as string) ?? [];
     if (variantIds.length === 0) return [];
-    const { data, error } = await supabase.from('inventory_balances').select('*').in('variant_id', variantIds);
+    const { data, error } = await getSupabase().from('inventory_balances').select('*').in('variant_id', variantIds);
     if (error) throw error;
     return (data as DbRow[]).map(mapInventory);
   },
@@ -539,7 +547,7 @@ export const inventoryService = {
       await delay();
       return mockMovements.filter((m) => m.variantId === variantId);
     }
-    const { data, error } = await supabase.from('inventory_movements').select('*').eq('variant_id', variantId).order('created_at', { ascending: false });
+    const { data, error } = await getSupabase().from('inventory_movements').select('*').eq('variant_id', variantId).order('created_at', { ascending: false });
     if (error) throw error;
     return (data as DbRow[]).map(mapMovement);
   },
@@ -553,7 +561,7 @@ export const imageService = {
       await delay();
       return mockImages.filter((i) => i.productId === productId);
     }
-    const { data, error } = await supabase.from('product_images').select('*').eq('product_id', productId).order('display_order', { ascending: true });
+    const { data, error } = await getSupabase().from('product_images').select('*').eq('product_id', productId).order('display_order', { ascending: true });
     if (error) throw error;
     return (data as DbRow[]).map(mapImage);
   },
@@ -567,7 +575,7 @@ export const jobService = {
       await delay();
       return mockJobs;
     }
-    const { data, error } = await supabase.from('jobs').select('*').order('created_at', { ascending: false });
+    const { data, error } = await getSupabase().from('jobs').select('*').order('created_at', { ascending: false });
     if (error) throw error;
     return (data as DbRow[]).map(mapJob);
   },
@@ -581,7 +589,7 @@ export const supplierService = {
       await delay();
       return mockSuppliers;
     }
-    const { data, error } = await supabase.from('suppliers').select('*').order('company_name', { ascending: true });
+    const { data, error } = await getSupabase().from('suppliers').select('*').order('company_name', { ascending: true });
     if (error) throw error;
     return (data as DbRow[]).map(mapSupplier);
   },
@@ -591,7 +599,7 @@ export const supplierService = {
       await delay();
       return mockProductSuppliers.filter((s) => s.productId === productId);
     }
-    const { data, error } = await supabase.from('product_suppliers').select('*').eq('product_id', productId);
+    const { data, error } = await getSupabase().from('product_suppliers').select('*').eq('product_id', productId);
     if (error) throw error;
     return (data as DbRow[]).map(mapProductSupplier);
   },
@@ -626,7 +634,7 @@ export const supplierService = {
       mockSuppliers.push(s);
       return s;
     }
-    const { data: inserted, error } = await supabase.from('suppliers').insert(row).select('*').maybeSingle();
+    const { data: inserted, error } = await getSupabase().from('suppliers').insert(row).select('*').maybeSingle();
     if (error) throw error;
     return inserted ? mapSupplier(inserted as DbRow) : null;
   },
@@ -640,7 +648,7 @@ export const warehouseService = {
       await delay();
       return mockWarehouses;
     }
-    const { data, error } = await supabase.from('warehouses').select('*').order('name', { ascending: true });
+    const { data, error } = await getSupabase().from('warehouses').select('*').order('name', { ascending: true });
     if (error) throw error;
     return (data as DbRow[]).map(mapWarehouse);
   },
@@ -676,7 +684,7 @@ export const warehouseService = {
       mockWarehouses.push(w);
       return w;
     }
-    const { data: inserted, error } = await supabase.from('warehouses').insert(row).select('*').maybeSingle();
+    const { data: inserted, error } = await getSupabase().from('warehouses').insert(row).select('*').maybeSingle();
     if (error) throw error;
     return inserted ? mapWarehouse(inserted as DbRow) : null;
   },
@@ -691,12 +699,12 @@ export const dashboardService = {
       return mockDashboardStats;
     }
     const [captures, matches, products, listings, jobs, inventory] = await Promise.all([
-      supabase.from('captures').select('*'),
-      supabase.from('product_matches').select('*'),
-      supabase.from('products').select('*'),
-      supabase.from('marketplace_listings').select('*'),
-      supabase.from('jobs').select('*'),
-      supabase.from('inventory_balances').select('*'),
+      getSupabase().from('captures').select('*'),
+      getSupabase().from('product_matches').select('*'),
+      getSupabase().from('products').select('*'),
+      getSupabase().from('marketplace_listings').select('*'),
+      getSupabase().from('jobs').select('*'),
+      getSupabase().from('inventory_balances').select('*'),
     ]);
 
     const capturesData = (captures.data as DbRow[]) ?? [];
@@ -721,7 +729,7 @@ export const dashboardService = {
     }
     const possibleDuplicates = Array.from(brandModelMap.values()).filter((c) => c > 1).length;
 
-    const { data: identifiers } = await supabase.from('product_identifiers').select('product_id').eq('identifier_type', 'UPC_A').eq('is_primary', true);
+    const { data: identifiers } = await getSupabase().from('product_identifiers').select('product_id').eq('identifier_type', 'UPC_A').eq('is_primary', true);
     const productsWithUpc = new Set(((identifiers as DbRow[]) ?? []).map((i) => i.product_id as string));
     const productsWithoutUpc = productsData.filter((p) => !productsWithUpc.has(p.id as string)).length;
     const productsWithoutImages = productsData.filter((p) => !p.primary_image_url).length;
@@ -751,7 +759,7 @@ export const dashboardService = {
       await delay();
       return mockDashboardActivity;
     }
-    const { data, error } = await supabase.from('dashboard_activity').select('*').order('timestamp', { ascending: false }).limit(20);
+    const { data, error } = await getSupabase().from('dashboard_activity').select('*').order('timestamp', { ascending: false }).limit(20);
     if (error) throw error;
     return (data as DbRow[]).map(mapActivity);
   },
@@ -765,7 +773,7 @@ export const auditService = {
       await delay();
       return mockAuditLogs;
     }
-    const { data, error } = await supabase.from('audit_logs').select('*').order('created_at', { ascending: false });
+    const { data, error } = await getSupabase().from('audit_logs').select('*').order('created_at', { ascending: false });
     if (error) throw error;
     return (data as DbRow[]).map(mapAuditLog);
   },
@@ -792,7 +800,7 @@ const defaultSettings: AppSettings = {
 export const settingsService = {
   async getSettings(): Promise<AppSettings> {
     if (isDemoMode()) return defaultSettings;
-    const { data, error } = await supabase.from('app_settings').select('*').eq('id', 1).maybeSingle();
+    const { data, error } = await getSupabase().from('app_settings').select('*').eq('id', 1).maybeSingle();
     if (error) throw error;
     if (!data) return defaultSettings;
     const r = data as DbRow;
@@ -807,7 +815,7 @@ export const settingsService = {
 
   async updateSettings(settings: AppSettings): Promise<void> {
     if (isDemoMode()) { await delay(); return; }
-    const { error } = await supabase.from('app_settings').update({
+    const { error } = await getSupabase().from('app_settings').update({
       rate_limiting: settings.rateLimiting,
       csrf_protection: settings.csrfProtection,
       audit_logging: settings.auditLogging,
@@ -850,7 +858,7 @@ export const productMutations = {
     if (updates.taxUnitCode !== undefined) snakeUpdates.tax_unit_code = updates.taxUnitCode;
     if (updates.taxObjectCode !== undefined) snakeUpdates.tax_object_code = updates.taxObjectCode;
     if (updates.launchDate !== undefined) snakeUpdates.launch_date = updates.launchDate;
-    const { error } = await supabase.from('products').update(snakeUpdates).eq('id', id);
+    const { error } = await getSupabase().from('products').update(snakeUpdates).eq('id', id);
     if (error) throw error;
   },
 
@@ -909,7 +917,7 @@ export const productMutations = {
       mockProducts.push(p);
       return p;
     }
-    const { data: inserted, error } = await supabase.from('products').insert(row).select('*').maybeSingle();
+    const { data: inserted, error } = await getSupabase().from('products').insert(row).select('*').maybeSingle();
     if (error) throw error;
     return inserted ? mapProduct(inserted as DbRow) : null;
   },
@@ -924,7 +932,7 @@ export const productMutations = {
     if (updates.purchaseCost !== undefined) snakeUpdates.purchase_cost = updates.purchaseCost;
     if (updates.retailPrice !== undefined) snakeUpdates.retail_price = updates.retailPrice;
     if (updates.unitOfMeasure !== undefined) snakeUpdates.unit_of_measure = updates.unitOfMeasure;
-    const { error } = await supabase.from('product_variants').update(snakeUpdates).eq('id', id);
+    const { error } = await getSupabase().from('product_variants').update(snakeUpdates).eq('id', id);
     if (error) throw error;
   },
 };
@@ -932,42 +940,100 @@ export const productMutations = {
 // ---- Capture Mutations ----
 
 export const captureMutations = {
-  async promoteToProduct(captureId: string): Promise<Product | null> {
-    const capture = await captureService.getCapture(captureId);
-    if (!capture) throw new Error('Captura no encontrada');
-
-    const ipn = `IPN-${Date.now()}`;
-    const product = await productMutations.createProduct({
-      internalProductNumber: ipn,
-      titleMaster: capture.capturedTitle,
-      descriptionMaster: capture.capturedDescription || '',
-      brandName: capture.capturedBrand || '',
-      model: capture.capturedModel || '',
-      manufacturer: capture.capturedBrand || '',
-      productType: '',
-      condition: 'NEW',
-      status: 'DRAFT',
-    });
-
-    if (!product) return null;
-
+  async processMatches(captureId: string): Promise<void> {
     if (!isDemoMode()) {
-      await supabase.from('captures').update({
-        status: 'MATCHED',
-        assigned_product_id: product.id,
-        processed_at: new Date().toISOString(),
-      }).eq('id', captureId);
+      const { error } = await getSupabase().rpc('process_capture_matches', { p_capture_id: captureId });
+      if (error) throw error;
+      return;
     }
+    await delay();
+    const capture = mockCaptures.find((item) => item.id === captureId);
+    if (!capture) throw new Error('Captura no encontrada');
+    if (capture.assignedProductId || ['REJECTED', 'COMPLETED', 'MATCHED'].includes(capture.status)) return;
+    const now = new Date().toISOString();
+    for (let i = mockMatches.length - 1; i >= 0; i--) {
+      if (mockMatches[i].captureId === captureId && mockMatches[i].decision === 'PENDING') mockMatches.splice(i, 1);
+    }
+    const reviewed = mockMatches.filter((match) => match.captureId === captureId);
+    mockMatches.push(...findCaptureMatches(capture, mockProducts, mockIdentifiers, now)
+      .filter((match) => !reviewed.some((item) => item.candidateProductId === match.candidateProductId)));
+    const candidates = mockMatches.filter((match) => match.captureId === captureId && !['REJECTED', 'NOT_SAME_PRODUCT'].includes(match.decision))
+      .sort((a, b) => b.totalScore - a.totalScore || a.candidateProductId.localeCompare(b.candidateProductId));
+    const best = candidates[0];
+    capture.status = !best ? 'NEW_PRODUCT_CANDIDATE' : candidates.length > 1 || best.conflicts.length ? 'NEEDS_REVIEW' : 'POSSIBLE_MATCH';
+    capture.bestMatchProductId = best?.candidateProductId || null;
+    capture.bestMatchConfidence = best?.confidencePercentage ?? null;
+    capture.bestMatchRecommendation = !best ? 'CREATE_NEW_PRODUCT' : candidates.length > 1 ? 'NEEDS_HUMAN_REVIEW' : best.recommendation;
+    capture.processedAt = now;
+  },
 
+  async promoteToProduct(captureId: string): Promise<Product | null> {
+    if (!isDemoMode()) {
+      const { data, error } = await getSupabase().rpc('promote_capture_to_product', { p_capture_id: captureId });
+      if (error) throw error;
+      if (!data?.[0]) throw new Error('No se pudo recuperar el producto creado');
+      return mapProduct(data[0] as DbRow);
+    }
+    await delay();
+    // No awaits inside the mutation: concurrent calls reuse the existing assignment.
+    const capture = mockCaptures.find((c) => c.id === captureId);
+    if (!capture) throw new Error('Captura no encontrada');
+    if (capture.assignedProductId) {
+      const existing = mockProducts.find((p) => p.id === capture.assignedProductId);
+      if (!existing) throw new Error('Producto asignado no encontrado');
+      return existing;
+    }
+    if (['REJECTED', 'COMPLETED', 'MATCHED'].includes(capture.status)) {
+      throw new Error('La captura no puede convertirse en producto en su estado actual');
+    }
+    if (!capture.capturedTitle.trim()) throw new Error('El titulo es obligatorio');
+    const id = `prd_${crypto.randomUUID()}`;
+    const variantId = `var_${crypto.randomUUID()}`;
+    const ipn = `IPN-${crypto.randomUUID()}`;
+    const now = new Date().toISOString();
+    const { images, identifiers } = captureAssets(capture, id, variantId, now);
+    const product: Product = {
+      id, internalProductNumber: ipn, titleMaster: capture.capturedTitle,
+      normalizedTitle: capture.capturedTitle.toLowerCase(), descriptionMaster: capture.capturedDescription,
+      brandId: '', brandName: capture.capturedBrand || '', model: capture.capturedModel || '',
+      manufacturer: capture.capturedBrand || '', productType: '', condition: 'NEW', status: 'DRAFT',
+      launchDate: null, taxProductCode: null, taxUnitCode: null, taxObjectCode: null,
+      defaultVariantId: variantId, primaryImageUrl: images[0]?.originalUrl || null,
+      variantCount: 1, totalInventory: 0, listingCount: 0,
+      createdBy: capture.capturedBy || 'system', updatedBy: capture.capturedBy || 'system',
+      createdAt: now, updatedAt: now, archivedAt: null,
+    };
+    const variant: ProductVariant = {
+      id: variantId, productId: id, internalSku: `${ipn}-01`, skuAlias: '', variantName: 'Predeterminada',
+      color: null, size: null, material: null, capacity: null, packageQuantity: null, unitOfMeasure: null,
+      packageWeightGrams: null, packageLengthCm: null, packageWidthCm: null, packageHeightCm: null,
+      purchaseCost: null, retailPrice: capture.capturedPrice, currency: capture.capturedCurrency || 'MXN',
+      active: true, createdAt: now, updatedAt: now,
+    };
+    mockProducts.push(product);
+    mockVariants.push(variant);
+    mockImages.push(...images);
+    mockIdentifiers.push(...identifiers);
+    capture.assignedProductId = id;
+    capture.assignedVariantId = variantId;
+    capture.status = 'COMPLETED';
+    capture.processedAt = now;
     return product;
   },
 
-  async updateCaptureStatus(captureId: string, status: string): Promise<void> {
-    if (isDemoMode()) { await delay(); return; }
-    await supabase.from('captures').update({
-      status,
-      processed_at: new Date().toISOString(),
+  async updateCaptureStatus(captureId: string, status: Capture['status']): Promise<void> {
+    if (isDemoMode()) {
+      await delay();
+      const capture = mockCaptures.find((c) => c.id === captureId);
+      if (!capture) throw new Error('Captura no encontrada');
+      capture.status = status;
+      capture.processedAt = new Date().toISOString();
+      return;
+    }
+    const { error } = await getSupabase().from('captures').update({
+      status, processed_at: new Date().toISOString(),
     }).eq('id', captureId);
+    if (error) throw error;
   },
 };
 
@@ -979,7 +1045,7 @@ export const inventoryGlobalService = {
       await delay();
       return mockInventory;
     }
-    const { data, error } = await supabase.from('inventory_balances').select('*').order('updated_at', { ascending: false });
+    const { data, error } = await getSupabase().from('inventory_balances').select('*').order('updated_at', { ascending: false });
     if (error) throw error;
     return (data as DbRow[]).map(mapInventory);
   },
@@ -993,20 +1059,20 @@ export const imageGlobalService = {
       await delay();
       return mockImages;
     }
-    const { data, error } = await supabase.from('product_images').select('*').order('created_at', { ascending: false });
+    const { data, error } = await getSupabase().from('product_images').select('*').order('created_at', { ascending: false });
     if (error) throw error;
     return (data as DbRow[]).map(mapImage);
   },
 
   async approveImage(id: string): Promise<void> {
     if (isDemoMode()) { await delay(); return; }
-    const { error } = await supabase.from('product_images').update({ approved: true, updated_at: new Date().toISOString() }).eq('id', id);
+    const { error } = await getSupabase().from('product_images').update({ approved: true, updated_at: new Date().toISOString() }).eq('id', id);
     if (error) throw error;
   },
 
   async rejectImage(id: string): Promise<void> {
     if (isDemoMode()) { await delay(); return; }
-    const { error } = await supabase.from('product_images').update({ status: 'REJECTED', updated_at: new Date().toISOString() }).eq('id', id);
+    const { error } = await getSupabase().from('product_images').update({ status: 'REJECTED', updated_at: new Date().toISOString() }).eq('id', id);
     if (error) throw error;
   },
 };
@@ -1025,7 +1091,7 @@ export const matchMutations = {
       if (m) { m.decision = decision; m.decisionSource = decisionSource; m.reviewedBy = 'user'; m.reviewedAt = new Date().toISOString(); }
       return;
     }
-    const { error } = await supabase.from('product_matches').update({
+    const { error } = await getSupabase().from('product_matches').update({
       decision,
       decision_source: decisionSource,
       reviewed_by: 'user',
@@ -1045,7 +1111,7 @@ export const matchMutations = {
       if (c) { c.assignedProductId = productId; c.assignedVariantId = variantId; c.status = 'MATCHED'; }
       return;
     }
-    const { error: capErr } = await supabase.from('captures').update({
+    const { error: capErr } = await getSupabase().from('captures').update({
       assigned_product_id: productId,
       assigned_variant_id: variantId,
       status: 'MATCHED',
@@ -1060,20 +1126,20 @@ export const matchMutations = {
 export const imageMutations = {
   async approveImage(id: string): Promise<void> {
     if (isDemoMode()) { await delay(); return; }
-    const { error } = await supabase.from('product_images').update({ approved: true, updated_at: new Date().toISOString() }).eq('id', id);
+    const { error } = await getSupabase().from('product_images').update({ approved: true, updated_at: new Date().toISOString() }).eq('id', id);
     if (error) throw error;
   },
 
   async rejectImage(id: string): Promise<void> {
     if (isDemoMode()) { await delay(); return; }
-    const { error } = await supabase.from('product_images').update({ status: 'REJECTED', updated_at: new Date().toISOString() }).eq('id', id);
+    const { error } = await getSupabase().from('product_images').update({ status: 'REJECTED', updated_at: new Date().toISOString() }).eq('id', id);
     if (error) throw error;
   },
 
   async setMainImage(id: string, productId: string): Promise<void> {
     if (isDemoMode()) { await delay(); return; }
-    await supabase.from('product_images').update({ image_type: 'ALTERNATE' }).eq('product_id', productId).eq('image_type', 'MAIN');
-    const { error } = await supabase.from('product_images').update({ image_type: 'MAIN', updated_at: new Date().toISOString() }).eq('id', id);
+    await getSupabase().from('product_images').update({ image_type: 'ALTERNATE' }).eq('product_id', productId).eq('image_type', 'MAIN');
+    const { error } = await getSupabase().from('product_images').update({ image_type: 'MAIN', updated_at: new Date().toISOString() }).eq('id', id);
     if (error) throw error;
   },
 };
@@ -1083,7 +1149,7 @@ export const imageMutations = {
 export const jobMutations = {
   async retryJob(id: string): Promise<void> {
     if (isDemoMode()) { await delay(); return; }
-    const { error } = await supabase.from('jobs').update({
+    const { error } = await getSupabase().from('jobs').update({
       status: 'PENDING',
       attempts: 0,
       error_message: null,
@@ -1097,7 +1163,7 @@ export const jobMutations = {
 
   async cancelJob(id: string): Promise<void> {
     if (isDemoMode()) { await delay(); return; }
-    const { error } = await supabase.from('jobs').update({
+    const { error } = await getSupabase().from('jobs').update({
       status: 'CANCELLED',
       updated_at: new Date().toISOString(),
     }).eq('id', id);
@@ -1147,7 +1213,7 @@ export const integrationService = {
       await delay();
       return defaultIntegrations;
     }
-    const { data, error } = await supabase.from('integration_configs').select('*').order('category', { ascending: true });
+    const { data, error } = await getSupabase().from('integration_configs').select('*').order('category', { ascending: true });
     if (error) throw error;
     return (data as DbRow[]).map(mapIntegration);
   },
@@ -1157,7 +1223,7 @@ export const integrationService = {
       await delay();
       return defaultIntegrations.find((i) => i.id === id) ?? null;
     }
-    const { data, error } = await supabase.from('integration_configs').select('*').eq('id', id).maybeSingle();
+    const { data, error } = await getSupabase().from('integration_configs').select('*').eq('id', id).maybeSingle();
     if (error) throw error;
     return data ? mapIntegration(data as DbRow) : null;
   },
@@ -1176,7 +1242,7 @@ export const integrationService = {
       snakeUpdates.last_connected_at = new Date().toISOString();
       snakeUpdates.last_error = null;
     }
-    const { error } = await supabase.from('integration_configs').update(snakeUpdates).eq('id', id);
+    const { error } = await getSupabase().from('integration_configs').update(snakeUpdates).eq('id', id);
     if (error) throw error;
   },
 
@@ -1228,7 +1294,7 @@ export const integrationService = {
 
   async updateError(id: string, errorMsg: string): Promise<void> {
     if (isDemoMode()) return;
-    const { error } = await supabase
+    const { error } = await getSupabase()
       .from('integration_configs')
       .update({ last_error: errorMsg, updated_at: new Date().toISOString() })
       .eq('id', id);

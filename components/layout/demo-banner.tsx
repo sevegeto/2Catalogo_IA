@@ -1,6 +1,7 @@
 'use client';
 
 import { AlertTriangle, FlaskConical, Database } from 'lucide-react';
+import { isSupabaseConfigured } from '@/lib/runtime-config';
 import { useDemoMode } from '@/lib/demo-mode';
 import { Button } from '@/components/ui/button';
 
@@ -23,7 +24,7 @@ export function DemoBanner() {
             </>
           ) : (
             <>
-              <strong>LIVE</strong> — Conectado a la base de datos. Los datos son reales.
+              <strong>LIVE</strong> — Consultas a Supabase habilitadas.
             </>
           )}
         </span>
@@ -33,9 +34,10 @@ export function DemoBanner() {
         size="sm"
         className="h-6 gap-1.5 px-2 text-xs font-medium hover:bg-amber-100 dark:hover:bg-amber-950/50"
         onClick={toggleDemoMode}
+        disabled={!isSupabaseConfigured}
       >
         <FlaskConical className="h-3 w-3" />
-        {demoMode ? 'Cambiar a Live' : 'Cambiar a Demo'}
+        {!isSupabaseConfigured ? 'Supabase sin configurar' : demoMode ? 'Cambiar a Live' : 'Cambiar a Demo'}
       </Button>
     </div>
   );

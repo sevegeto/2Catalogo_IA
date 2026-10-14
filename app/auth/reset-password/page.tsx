@@ -3,7 +3,8 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { CheckCircle2, KeyRound, Loader2, ShieldAlert } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase/client';
+import { isSupabaseConfigured } from '@/lib/runtime-config';
+import { getSupabase } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -19,10 +20,14 @@ export default function ResetPasswordPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    if (!isSupabaseConfigured) {
+      setCheckingSession(false);
+      return;
+    }
     let mounted = true;
 
     const checkSession = async () => {
-      const { data } = await supabase.auth.getSession();
+      const { data } = await getSupabase().auth.getSession();
       if (mounted) {
         setHasRecoverySession(Boolean(data.session));
         setCheckingSession(false);
@@ -31,7 +36,7 @@ export default function ResetPasswordPage() {
 
     void checkSession();
 
-    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: listener } = getSupabase().auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
       if (event === 'PASSWORD_RECOVERY' || session) {
         setHasRecoverySession(true);
@@ -61,7 +66,7 @@ export default function ResetPasswordPage() {
     }
 
     setSaving(true);
-    const { error: updateError } = await supabase.auth.updateUser({ password });
+    const { error: updateError } = await getSupabase().auth.updateUser({ password });
     setSaving(false);
 
     if (updateError) {

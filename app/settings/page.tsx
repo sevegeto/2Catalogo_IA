@@ -459,7 +459,7 @@ export default function SettingsPage() {
                 </div>
                 <div className="rounded-md bg-blue-50 p-3 text-xs text-blue-700 dark:bg-blue-950/30 dark:text-blue-400">
                   El worker de Ollama corre en tu servidor Fedora local. La prueba de conexion se ejecuta desde la nube de Supabase,
-                  por lo que el host debe ser una IP publica o un dominio accesible desde internet (no un nombre de red local como "xeonfedoraserver").
+                  por lo que el host debe ser una IP publica o un dominio accesible desde internet (no un nombre de red local como &quot;xeonfedoraserver&quot;).
                   Si tu servidor esta detras de un router, configura port forwarding en el puerto 11434 o usa un tunnel (ej. Cloudflare Tunnel, Tailscale).
                 </div>
                 {testResult.ollama_worker && (
@@ -499,8 +499,8 @@ export default function SettingsPage() {
                   <ol className="ml-4 list-decimal space-y-1 text-xs text-muted-foreground">
                     <li>Descarga la carpeta <code className="rounded bg-muted px-1">chrome-extension/</code> de este proyecto</li>
                     <li>Abre <code className="rounded bg-muted px-1">chrome://extensions/</code> en Chrome</li>
-                    <li>Activa el "Modo desarrollador" (esquina superior derecha)</li>
-                    <li>Haz clic en "Cargar descomprimida" y selecciona la carpeta</li>
+                    <li>Activa el &quot;Modo desarrollador&quot; (esquina superior derecha)</li>
+                    <li>Haz clic en &quot;Cargar descomprimida&quot; y selecciona la carpeta</li>
                     <li>Configura la URL y Anon Key de Supabase en el popup de la extension</li>
                   </ol>
                 </div>

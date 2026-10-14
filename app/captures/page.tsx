@@ -22,6 +22,7 @@ export default function CapturesPage() {
   const [error, setError] = useState(false);
   const [promoting, setPromoting] = useState<string | null>(null);
   const [promoted, setPromoted] = useState<Record<string, string>>({});
+  const [actionError, setActionError] = useState('');
   const [selected, setSelected] = useState<Capture | null>(null);
 
   const load = () => {
@@ -36,6 +37,7 @@ export default function CapturesPage() {
   useEffect(() => { load(); }, []);
 
   const handlePromote = async (capture: Capture) => {
+    setActionError('');
     setPromoting(capture.id);
     setSelected(null);
     try {
@@ -44,19 +46,20 @@ export default function CapturesPage() {
         setPromoted((prev) => ({ ...prev, [capture.id]: product.id }));
         load();
       }
-    } catch (_e) {
-      // silently fail — user can retry
+    } catch {
+      setActionError('No se pudo crear el producto. Inténtalo de nuevo; no se duplicará si ya fue creado.');
     }
     setPromoting(null);
   };
 
   const handleDiscard = async (capture: Capture) => {
+    setActionError('');
     setSelected(null);
     try {
-      await captureMutations.updateCaptureStatus(capture.id, 'DISCARDED');
+      await captureMutations.updateCaptureStatus(capture.id, 'REJECTED');
       load();
     } catch (_e) {
-      // silently fail
+      setActionError('No se pudo descartar la captura. Inténtalo de nuevo.');
     }
   };
 
@@ -77,6 +80,7 @@ export default function CapturesPage() {
       />
 
       <div className="space-y-4 p-6">
+        {actionError && <p role="alert" className="text-sm text-destructive">{actionError}</p>}
         {error ? (
           <ErrorState onRetry={load} />
         ) : (
@@ -130,7 +134,7 @@ export default function CapturesPage() {
                       </TableCell>
 
                       <TableCell className="text-sm font-medium max-w-56">
-                        <span className="line-clamp-2">{c.capturedTitle}</span>
+                        <Link className="line-clamp-2 hover:underline" href={`/captures/${c.id}`}>{c.capturedTitle}</Link>
                       </TableCell>
 
                       <TableCell className="text-xs">
@@ -176,8 +180,8 @@ export default function CapturesPage() {
 
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
-                          {promoted[c.id] ? (
-                            <Link href={`/products/${promoted[c.id]}`}>
+                          {(c.assignedProductId || promoted[c.id]) ? (
+                            <Link href={`/products/${c.assignedProductId || promoted[c.id]}`}>
                               <Button size="sm" variant="ghost" className="h-7 text-xs text-emerald-600">
                                 <CheckCircle className="mr-1 h-3.5 w-3.5" />
                                 Ver producto
@@ -271,7 +275,7 @@ export default function CapturesPage() {
               </div>
 
               <p className="text-xs text-muted-foreground">
-                Se creara un borrador de producto con estos datos. Podras completar el resto de la informacion desde la ficha del producto.
+                Se creara un borrador con una variante y SKU inicial, imágenes e identificadores pendientes de verificar. Podras completar el resto de la informacion desde la ficha del producto.
               </p>
             </div>
           )}
