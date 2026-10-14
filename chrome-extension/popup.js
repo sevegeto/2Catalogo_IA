@@ -80,8 +80,12 @@
         if (!chrome.scripting || !tab.url || /^(chrome|edge|about|https:\/\/chromewebstore\.google\.com)/i.test(tab.url)) {
           throw new Error('Chrome no permite leer esta pagina. Abre una pagina normal de producto y vuelve a intentarlo.');
         }
-        await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
-        response = await chrome.tabs.sendMessage(tab.id, { type: 'CAPTURE_PRODUCT' });
+        try {
+          await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
+          response = await chrome.tabs.sendMessage(tab.id, { type: 'CAPTURE_PRODUCT' });
+        } catch (injectionError) {
+          throw new Error('Actualiza la extension en chrome://extensions y recarga la pagina del producto.');
+        }
       }
 
       if (!response || !response.success) {
