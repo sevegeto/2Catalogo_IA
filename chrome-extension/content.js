@@ -1,19 +1,190 @@
 (function () {
+  // ----------------------------------------------------------------
+  // Helpers
+  // ----------------------------------------------------------------
   function getText(selector) {
     const el = document.querySelector(selector);
     return el ? el.textContent.trim() : '';
   }
 
   function getMeta(name) {
-    const el = document.querySelector(`meta[property="${name}"], meta[name="${name}"]`);
-    return el ? el.getAttribute('content') || '' : '';
+    const el = document.querySelector(
+      `meta[property="${name}"], meta[name="${name}"]`
+    );
+    return el ? (el.getAttribute('content') || '').trim() : '';
   }
 
+  function cleanText(str) {
+    if (!str) return '';
+    return str.replace(/\s+/g, ' ').trim();
+  }
+
+  // Strip site suffix like "| Free Shipping at Academy" or "| eBay"
+  function cleanTitle(raw) {
+    if (!raw) return '';
+    return cleanText(raw)
+      .replace(/\s*[\|\-—]\s*(free shipping|ebay|amazon|walmart|bestbuy|academy|mercado|mercadolibre|mercadolivre|gun\.deals|optics planet|buds gun shop|sportsman's warehouse|academy sports)[^]*$/i, '')
+      .trim();
+  }
+
+  // Only keep a valid UPC/EAN/GTIN (8-14 digits, no spaces, no HTML)
+  function cleanUPC(str) {
+    if (!str) return '';
+    const match = (str || '').match(/\b(\d{8,14})\b/);
+    return match ? match[1] : '';
+  }
+
+  // ----------------------------------------------------------------
+  // Site-specific extractors (called first, then generic fallback)
+  // ----------------------------------------------------------------
+  const hostname = window.location.hostname.replace(/^www\./, '');
+
+  function extractTitleSiteSpecific() {
+    // Amazon
+    if (hostname.includes('amazon.')) {
+      return (
+        getText('#productTitle') ||
+        getText('#title') ||
+        getText('.product-title-word-break')
+      );
+    }
+    // MercadoLibre
+    if (hostname.includes('mercadolibre') || hostname.includes('mercadolivre')) {
+      return getText('h1.ui-pdp-title') || getText('.ui-pdp-title');
+    }
+    // eBay
+    if (hostname.includes('ebay.')) {
+      return getText('h1.x-item-title__mainTitle span') || getText('#itemTitle');
+    }
+    // gun.deals
+    if (hostname.includes('gun.deals')) {
+      return getText('h1.node-title') || getText('h1');
+    }
+    // Academy
+    if (hostname.includes('academy.com')) {
+      return getText('h1[data-aui-component]') || getText('h1');
+    }
+    return '';
+  }
+
+  function extractBrandSiteSpecific() {
+    if (hostname.includes('amazon.')) {
+      return (
+        getText('#bylineInfo') ||
+        getText('#brand') ||
+        getText('.po-brand .po-break-word') ||
+        getText('tr.po-brand td:last-child')
+      );
+    }
+    if (hostname.includes('mercadolibre') || hostname.includes('mercadolivre')) {
+      const brandEl = document.querySelector(
+        'span.ui-pdp-action-modal__link, [class*="brand"] a, .andes-table__column--value a'
+      );
+      return brandEl ? cleanText(brandEl.textContent) : '';
+    }
+    if (hostname.includes('ebay.')) {
+      const row = [...document.querySelectorAll('.ux-labels-values__labels')].find(
+        (el) => el.textContent.trim().toLowerCase() === 'brand'
+      );
+      return row ? cleanText(row.nextElementSibling?.textContent || '') : '';
+    }
+    return '';
+  }
+
+  function extractPriceSiteSpecific() {
+    if (hostname.includes('amazon.')) {
+      const el =
+        document.querySelector('.a-price .a-offscreen') ||
+        document.querySelector('#priceblock_ourprice') ||
+        document.querySelector('#priceblock_dealprice') ||
+        document.querySelector('.apexPriceToPay .a-offscreen');
+      if (el) {
+        const m = el.textContent.match(/[\d.,]+/);
+        if (m) return parseFloat(m[0].replace(/,(?=\d{3})/g, '').replace(',', '.'));
+      }
+    }
+    if (hostname.includes('mercadolibre') || hostname.includes('mercadolivre')) {
+      const el =
+        document.querySelector('.andes-money-amount__fraction') ||
+        document.querySelector('[class*="price-fraction"]');
+      if (el) {
+        const m = el.textContent.match(/[\d.,]+/);
+        if (m) return parseFloat(m[0].replace(/,/g, ''));
+      }
+    }
+    if (hostname.includes('ebay.')) {
+      const el =
+        document.querySelector('.x-price-primary .ux-textspans') ||
+        document.querySelector('#prcIsum');
+      if (el) {
+        const m = el.textContent.match(/[\d.,]+/);
+        if (m) return parseFloat(m[0].replace(/,/g, ''));
+      }
+    }
+    if (hostname.includes('gun.deals')) {
+      // gun.deals shows multiple store prices; grab the lowest numeric price text
+      const prices = [];
+      document.querySelectorAll('.price, [class*="price"]').forEach((el) => {
+        const m = el.textContent.match(/\$\s*([\d.,]+)/);
+        if (m) {
+          const v = parseFloat(m[1].replace(/,/g, ''));
+          if (v > 0) prices.push(v);
+        }
+      });
+      return prices.length ? Math.min(...prices) : null;
+    }
+    if (hostname.includes('academy.com')) {
+      const el =
+        document.querySelector('[data-aui-component="price"] .styled__StyledPriceWrapper') ||
+        document.querySelector('.price-now') ||
+        document.querySelector('[class*="CurrentPrice"]');
+      if (el) {
+        const m = el.textContent.match(/[\d.,]+/);
+        if (m) return parseFloat(m[0].replace(/,/g, ''));
+      }
+    }
+    return null;
+  }
+
+  function extractUPCSiteSpecific() {
+    // Amazon rarely shows UPC in DOM; skip
+    if (hostname.includes('amazon.')) return '';
+    // eBay tech specs table
+    if (hostname.includes('ebay.')) {
+      const rows = document.querySelectorAll('.ux-labels-values__labels');
+      for (const row of rows) {
+        const label = row.textContent.trim().toLowerCase();
+        if (label === 'upc' || label === 'ean' || label === 'gtin') {
+          return cleanUPC(row.nextElementSibling?.textContent || '');
+        }
+      }
+    }
+    // MercadoLibre attributes table
+    if (hostname.includes('mercadolibre') || hostname.includes('mercadolivre')) {
+      const rows = document.querySelectorAll('.andes-table__row');
+      for (const row of rows) {
+        const cells = row.querySelectorAll('.andes-table__column');
+        if (cells.length >= 2) {
+          const label = cells[0].textContent.trim().toLowerCase();
+          if (label.includes('gtin') || label.includes('ean') || label.includes('upc')) {
+            return cleanUPC(cells[1].textContent);
+          }
+        }
+      }
+    }
+    return '';
+  }
+
+  // ----------------------------------------------------------------
+  // Generic extractors (fallback)
+  // ----------------------------------------------------------------
   function extractPrice() {
+    const sitePrice = extractPriceSiteSpecific();
+    if (sitePrice !== null) return sitePrice;
+
     const priceSelectors = [
-      '[data-price]', '.price', '.product-price', '.a-price .a-offscreen',
-      '[itemprop="price"]', '.current-price', '.sale-price', '.price-value',
-      '.product-detail__price', '.price-now', '.offer-price',
+      '[itemprop="price"]', '.product-price', '.current-price',
+      '.sale-price', '.price-value', '.price-now', '.offer-price',
     ];
     for (const sel of priceSelectors) {
       const el = document.querySelector(sel);
@@ -21,8 +192,7 @@
         const text = el.textContent || el.getAttribute('content') || '';
         const match = text.match(/[\d.,]+/);
         if (match) {
-          let priceStr = match[0].replace(/,(?=\d{2}\b)/, '.').replace(/,/g, '');
-          const price = parseFloat(priceStr);
+          const price = parseFloat(match[0].replace(/,(?=\d{2}\b)/, '.').replace(/,/g, ''));
           if (!isNaN(price) && price > 0) return price;
         }
       }
@@ -31,98 +201,151 @@
   }
 
   function extractCurrency() {
-    const currencySelectors = [
-      '[itemprop="priceCurrency"]', '[data-currency]',
-    ];
-    for (const sel of currencySelectors) {
+    if (hostname.includes('amazon.') || hostname.includes('ebay.') || hostname.includes('gun.deals') || hostname.includes('academy.com')) {
+      return 'USD';
+    }
+    if (hostname.includes('mercadolibre.com.mx') || hostname.includes('mercadolibre.com.co')) {
+      return hostname.includes('.mx') ? 'MXN' : 'COP';
+    }
+    const selectors = ['[itemprop="priceCurrency"]', '[data-currency]'];
+    for (const sel of selectors) {
       const el = document.querySelector(sel);
       if (el) {
         const val = el.getAttribute('content') || el.getAttribute('data-currency') || el.textContent.trim();
-        if (val) return val.substring(0, 3).toUpperCase();
+        if (val && /^[A-Z]{3}$/.test(val)) return val.toUpperCase();
       }
     }
-    const priceText = document.body?.innerText?.match(/\b(USD|MXN|EUR|COP|ARS|BRL|CLP|PEN|UYU)\b/i);
-    if (priceText) return priceText[1].toUpperCase();
-    return 'MXN';
+    const m = document.body?.innerText?.match(/\b(USD|MXN|EUR|COP|ARS|BRL|CLP|PEN|UYU)\b/i);
+    return m ? m[1].toUpperCase() : 'USD';
   }
 
   function extractImages() {
     const images = [];
-    const selectors = [
+
+    // Site-specific selectors first
+    let siteSelectors = [];
+    if (hostname.includes('amazon.')) {
+      siteSelectors = ['#landingImage', '#imgBlkFront', '.a-dynamic-image', '#imageBlock img'];
+    } else if (hostname.includes('mercadolibre') || hostname.includes('mercadolivre')) {
+      siteSelectors = ['.ui-pdp-gallery__figure img', '.ui-pdp-image'];
+    } else if (hostname.includes('ebay.')) {
+      siteSelectors = ['.ux-image-carousel-item img', '#icImg'];
+    } else if (hostname.includes('academy.com')) {
+      siteSelectors = ['[data-testid="main-product-image"] img', '.slick-slide img'];
+    }
+
+    const allSelectors = [
+      ...siteSelectors,
       'img[itemprop="image"]',
       '.product-image img', '.gallery-image', '.carousel-image',
-      '.a-dynamic-image', '[data-zoom-image]',
-      'picture source[srcset]',
-      '.product__image img',
+      'picture source[srcset]', '[data-zoom-image]', '.product__image img',
     ];
-    selectors.forEach((sel) => {
+
+    allSelectors.forEach((sel) => {
       document.querySelectorAll(sel).forEach((el) => {
-        const src = el.srcset || el.src || el.getAttribute('data-src') || '';
-        if (src && !images.includes(src) && src.startsWith('http')) {
-          images.push(src.split(' ')[0]);
+        let src = el.getAttribute('data-old-hires') ||
+          el.getAttribute('data-zoom-image') ||
+          el.getAttribute('data-src') ||
+          el.srcset || el.src || '';
+        src = src.split(' ')[0];
+        if (src && src.startsWith('http') && !images.includes(src)) {
+          images.push(src);
         }
       });
     });
+
+    // Fallback: any sufficiently large image
     if (images.length === 0) {
       document.querySelectorAll('img').forEach((img) => {
         const src = img.src || img.getAttribute('data-src') || '';
-        if (src && src.startsWith('http') && img.width >= 100 && img.height >= 100 && !images.includes(src)) {
+        if (src && src.startsWith('http') && img.naturalWidth >= 100 && img.naturalHeight >= 100 && !images.includes(src)) {
           images.push(src);
         }
       });
     }
+
     return images.slice(0, 10);
   }
 
   function extractBrand() {
+    const site = extractBrandSiteSpecific();
+    if (site && site.length < 60) return cleanText(site);
+
     const brandSelectors = [
-      '[itemprop="brand"]', '[data-brand]', '.product-brand',
-      '.brand-name', '.manufacturer', '[itemprop="manufacturer"]',
+      '[itemprop="brand"] [itemprop="name"]',
+      '[itemprop="brand"]',
+      '[data-brand]', '.product-brand', '.brand-name',
+      '[itemprop="manufacturer"]',
     ];
     for (const sel of brandSelectors) {
       const el = document.querySelector(sel);
       if (el) {
         const val = el.getAttribute('content') || el.textContent.trim();
-        if (val) return val;
+        if (val && val.length < 60) return cleanText(val);
       }
     }
-    return getMeta('product:brand') || '';
+    return cleanText(getMeta('product:brand'));
   }
 
   function extractModel() {
-    const modelSelectors = [
-      '[itemprop="model"]', '[data-model]', '.product-model',
-      '.model-number', '.item-model',
-    ];
-    for (const sel of modelSelectors) {
+    if (hostname.includes('amazon.')) {
+      const rows = document.querySelectorAll('#productDetails_techSpec_section_1 tr, #detailBullets_feature_div li');
+      for (const row of rows) {
+        const text = row.textContent.toLowerCase();
+        if (text.includes('item model number') || text.includes('model number')) {
+          const val = row.querySelector('td:last-child, .a-list-item');
+          if (val) return cleanText(val.textContent);
+        }
+      }
+    }
+    const selectors = ['[itemprop="model"]', '[data-model]', '.product-model', '.model-number', '.item-model'];
+    for (const sel of selectors) {
       const el = document.querySelector(sel);
       if (el) {
         const val = el.getAttribute('content') || el.textContent.trim();
-        if (val) return val;
+        if (val) return cleanText(val);
       }
     }
     return '';
   }
 
   function extractMPN() {
+    if (hostname.includes('amazon.')) {
+      const rows = document.querySelectorAll('#productDetails_techSpec_section_1 tr, #detailBullets_feature_div li');
+      for (const row of rows) {
+        const text = row.textContent.toLowerCase();
+        if (text.includes('manufacturer part number') || text.includes('mpn')) {
+          const val = row.querySelector('td:last-child, .a-list-item');
+          if (val) return cleanText(val.textContent);
+        }
+      }
+    }
+    if (hostname.includes('gun.deals')) {
+      // MPN often in title as "Model# XXX" or in specs
+      const m = document.title.match(/\b([A-Z0-9]{3,}-[A-Z0-9]{2,})\b/);
+      if (m) return m[1];
+    }
     const selectors = ['[itemprop="mpn"]', '[data-mpn]', '.mpn', '.manufacturer-part'];
     for (const sel of selectors) {
       const el = document.querySelector(sel);
       if (el) {
         const val = el.getAttribute('content') || el.textContent.trim();
-        if (val) return val;
+        if (val) return cleanText(val);
       }
     }
     return '';
   }
 
   function extractUPC() {
-    const selectors = ['[itemprop="gtin13"]', '[itemprop="gtin"]', '[data-upc]', '[data-gtin]', '.upc', '.gtin'];
+    const site = extractUPCSiteSpecific();
+    if (site) return site;
+    const selectors = ['[itemprop="gtin13"]', '[itemprop="gtin12"]', '[itemprop="gtin"]', '[data-upc]', '[data-gtin]', '.upc', '.gtin'];
     for (const sel of selectors) {
       const el = document.querySelector(sel);
       if (el) {
         const val = el.getAttribute('content') || el.textContent.trim();
-        if (val) return val;
+        const clean = cleanUPC(val);
+        if (clean) return clean;
       }
     }
     return '';
@@ -132,84 +355,126 @@
     const match = window.location.href.match(/\/dp\/([A-Z0-9]{10})/);
     if (match) return match[1];
     const el = document.querySelector('[data-asin]');
-    if (el) return el.getAttribute('data-asin') || '';
+    if (el) {
+      const val = el.getAttribute('data-asin') || '';
+      if (val.length === 10) return val;
+    }
     return '';
   }
 
   function extractDescription() {
     const descSelectors = [
-      '[itemprop="description"]', '.product-description',
-      '#productDescription', '.product__description',
-      '.product-detail__description', '[data-testid="product-description"]',
+      '[itemprop="description"]',
+      '#productDescription p', '#feature-bullets .a-list-item',
+      '.ui-pdp-description__content',
+      '.product-description', '.product__description',
+      '[data-testid="product-description"]',
     ];
     for (const sel of descSelectors) {
       const el = document.querySelector(sel);
       if (el) {
-        const text = el.textContent.trim().substring(0, 5000);
-        if (text) return text;
+        const text = el.textContent.trim().substring(0, 2000);
+        if (text.length > 20) return cleanText(text);
       }
     }
     return getMeta('og:description') || getMeta('description') || '';
   }
 
   function extractTitle() {
-    return (
-      getMeta('og:title') ||
-      getText('[itemprop="name"]') ||
-      getText('h1') ||
-      getText('.product-title') ||
-      getText('.product-name') ||
-      document.title
-    );
+    const site = extractTitleSiteSpecific();
+    if (site) return cleanTitle(site);
+
+    const candidates = [
+      getMeta('og:title'),
+      getText('[itemprop="name"]'),
+      getText('h1'),
+      getText('.product-title'),
+      getText('.product-name'),
+    ].filter(Boolean);
+
+    for (const c of candidates) {
+      const cleaned = cleanTitle(c);
+      if (cleaned && cleaned.length > 5) return cleaned;
+    }
+
+    return cleanTitle(document.title);
   }
 
   function extractAttributes() {
     const attrs = {};
     const specContainers = [
-      '.product-specifications table', '.tech-spec-table',
-      '#feature-bullets ul', '.product-attributes',
+      '#productDetails_techSpec_section_1',
+      '#productDetails_detailBullets_sections1',
+      '.product-specifications table',
+      '.tech-spec-table',
+      '.andes-table',
       '[data-testid="product-specifications"]',
     ];
     specContainers.forEach((sel) => {
       const container = document.querySelector(sel);
       if (!container) return;
-      container.querySelectorAll('tr, li, .spec-row').forEach((row) => {
-        const cells = row.querySelectorAll('td, th, .spec-label, .spec-value');
+      container.querySelectorAll('tr, .andes-table__row').forEach((row) => {
+        const cells = row.querySelectorAll('td, th, .andes-table__column');
         if (cells.length >= 2) {
-          const key = cells[0].textContent.trim();
-          const value = cells[1].textContent.trim();
-          if (key && value && key.length < 100) {
+          const key = cleanText(cells[0].textContent);
+          const value = cleanText(cells[1].textContent);
+          if (key && value && key.length < 80 && value.length < 200) {
             attrs[key] = value;
           }
         }
       });
     });
+
+    // Amazon bullet points as attributes
+    if (hostname.includes('amazon.')) {
+      document.querySelectorAll('#feature-bullets li .a-list-item').forEach((el) => {
+        const text = cleanText(el.textContent);
+        const sep = text.indexOf(':');
+        if (sep > 0 && sep < 60) {
+          attrs[text.substring(0, sep).trim()] = text.substring(sep + 1).trim();
+        }
+      });
+    }
+
     return attrs;
   }
 
   function extractExternalReference() {
-    if (window.location.hostname.includes('mercadolibre') || window.location.hostname.includes('mercadolivre')) {
-      const match = window.location.pathname.match(/\/(ML[A-Z]?-\d+)/);
+    if (hostname.includes('mercadolibre') || hostname.includes('mercadolivre')) {
+      const match = window.location.pathname.match(/\/(ML[A-Z]?-?\d+)/);
       if (match) return match[1];
     }
-    if (window.location.hostname.includes('amazon.')) {
-      const asin = extractASIN();
-      if (asin) return asin;
+    if (hostname.includes('amazon.')) {
+      return extractASIN() || null;
+    }
+    if (hostname.includes('ebay.')) {
+      const m = window.location.pathname.match(/\/(\d{10,13})/);
+      if (m) return m[1];
     }
     return null;
   }
 
   function extractProduct() {
     const title = extractTitle();
-    if (!title) return null;
+    if (!title || title.length < 3) return null;
+
+    // Final safety: if extracted UPC looks like garbage (>14 chars of digits) discard
+    const rawUpc = extractUPC();
+    const safeUpc = rawUpc && /^\d{8,14}$/.test(rawUpc) ? rawUpc : null;
+
+    const rawMpn = extractMPN();
+    const safeMpn = rawMpn && rawMpn.length <= 50 ? rawMpn : null;
+
+    const rawBrand = extractBrand();
+    const safeBrand = rawBrand && rawBrand.length <= 80 ? rawBrand : null;
 
     return {
-      title: title,
+      title,
       description: extractDescription(),
-      brand: extractBrand() || null,
+      brand: safeBrand || null,
       model: extractModel() || null,
-      mpn: extractMPN() || null,
-      upc: extractUPC() || null,
+      mpn: safeMpn || null,
+      upc: safeUpc || null,
       asin: extractASIN() || null,
       price: extractPrice(),
       currency: extractCurrency(),

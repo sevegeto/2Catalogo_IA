@@ -929,6 +929,48 @@ export const productMutations = {
   },
 };
 
+// ---- Capture Mutations ----
+
+export const captureMutations = {
+  async promoteToProduct(captureId: string): Promise<Product | null> {
+    const capture = await captureService.getCapture(captureId);
+    if (!capture) throw new Error('Captura no encontrada');
+
+    const ipn = `IPN-${Date.now()}`;
+    const product = await productMutations.createProduct({
+      internalProductNumber: ipn,
+      titleMaster: capture.capturedTitle,
+      descriptionMaster: capture.capturedDescription || '',
+      brandName: capture.capturedBrand || '',
+      model: capture.capturedModel || '',
+      manufacturer: capture.capturedBrand || '',
+      productType: '',
+      condition: 'NEW',
+      status: 'DRAFT',
+    });
+
+    if (!product) return null;
+
+    if (!isDemoMode()) {
+      await supabase.from('captures').update({
+        status: 'MATCHED',
+        assigned_product_id: product.id,
+        processed_at: new Date().toISOString(),
+      }).eq('id', captureId);
+    }
+
+    return product;
+  },
+
+  async updateCaptureStatus(captureId: string, status: string): Promise<void> {
+    if (isDemoMode()) { await delay(); return; }
+    await supabase.from('captures').update({
+      status,
+      processed_at: new Date().toISOString(),
+    }).eq('id', captureId);
+  },
+};
+
 // ---- Inventory Service (global) ----
 
 export const inventoryGlobalService = {
