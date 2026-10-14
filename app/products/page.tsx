@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Plus, Filter, ImageIcon, Store } from 'lucide-react';
 import { AppShell } from '@/components/layout/app-shell';
 import { PageHeader } from '@/components/layout/page-header';
+import { ErrorState } from '@/components/layout/error-state';
 import { ProductStatusBadge } from '@/components/layout/status-badges';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -40,6 +41,7 @@ export default function ProductsPage() {
   const router = useRouter();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [showNew, setShowNew] = useState(false);
@@ -57,10 +59,11 @@ export default function ProductsPage() {
 
   const loadProducts = () => {
     setLoading(true);
-    productService.getProducts().then((p) => {
-      setProducts(p);
-      setLoading(false);
-    });
+    setError(false);
+    productService.getProducts()
+      .then((p) => setProducts(p))
+      .catch(() => setError(true))
+      .finally(() => setLoading(false));
   };
 
   useEffect(() => { loadProducts(); }, []);
@@ -121,6 +124,10 @@ export default function ProductsPage() {
       />
 
       <div className="space-y-4 p-6">
+        {error ? (
+          <ErrorState onRetry={loadProducts} />
+        ) : (
+        <>
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative flex-1 min-w-48">
             <Filter className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -256,6 +263,8 @@ export default function ProductsPage() {
             {filtered.length} de {products.length} productos
           </span>
         </div>
+        </>
+        )}
       </div>
 
       <Dialog open={showNew} onOpenChange={setShowNew}>

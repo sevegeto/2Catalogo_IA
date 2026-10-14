@@ -10,6 +10,7 @@ import {
 import Link from 'next/link';
 import { AppShell } from '@/components/layout/app-shell';
 import { PageHeader } from '@/components/layout/page-header';
+import { ErrorState } from '@/components/layout/error-state';
 import { ProductStatusBadge } from '@/components/layout/status-badges';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -56,6 +57,7 @@ export default function ProductEditorPage({ params }: PageProps) {
   const [movements, setMovements] = useState<InventoryMovement[]>([]);
   const [suppliers, setSuppliers] = useState<ProductSupplier[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const formRef = useRef<HTMLDivElement>(null);
@@ -87,8 +89,46 @@ export default function ProductEditorPage({ params }: PageProps) {
         setMovements(allMovements.flat());
       }
       setLoading(false);
+    }).catch(() => {
+      setError(true);
+      setLoading(false);
     });
   }, [params.id]);
+
+  const load = () => {
+    setLoading(true);
+    setError(false);
+    const id = params.id;
+    Promise.all([
+      productService.getProduct(id),
+      productService.getVariants(id),
+      productService.getIdentifiers(id),
+      imageService.getImages(id),
+      listingService.getListingsByProduct(id),
+      inventoryService.getInventoryByProduct(id),
+      supplierService.getProductSuppliers(id),
+    ]).then(async ([p, v, idn, img, lst, inv, sup]) => {
+      setProduct(p);
+      setVariants(v);
+      setIdentifiers(idn);
+      setImages(img);
+      setListings(lst);
+      setInventory(inv);
+      setSuppliers(sup);
+      if (v.length > 0) {
+        const allMovements = await Promise.all(
+          v.map((variant) =>
+            inventoryService.getMovementsByVariant(variant.id)
+          )
+        );
+        setMovements(allMovements.flat());
+      }
+      setLoading(false);
+    }).catch(() => {
+      setError(true);
+      setLoading(false);
+    });
+  };
 
   const handleSave = async () => {
     if (!product || !formRef.current) return;
@@ -129,6 +169,17 @@ export default function ProductEditorPage({ params }: PageProps) {
     }
     setSaving(false);
   };
+
+  if (error) {
+    return (
+      <AppShell>
+        <PageHeader title="Error" />
+        <div className="p-6">
+          <ErrorState onRetry={load} />
+        </div>
+      </AppShell>
+    );
+  }
 
   if (loading) {
     return (

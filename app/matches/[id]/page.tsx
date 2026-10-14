@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { AppShell } from '@/components/layout/app-shell';
 import { PageHeader } from '@/components/layout/page-header';
+import { ErrorState } from '@/components/layout/error-state';
 import {
   MatchDecisionBadge,
   ConfidenceBadge,
@@ -69,14 +70,19 @@ export default function MatchDetailPage({ params }: PageProps) {
   const router = useRouter();
   const [match, setMatch] = useState<ProductMatch | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [acting, setActing] = useState(false);
 
-  useEffect(() => {
-    matchService.getMatch(params.id).then((m) => {
-      setMatch(m);
-      setLoading(false);
-    });
-  }, [params.id]);
+  const load = () => {
+    setLoading(true);
+    setError(false);
+    matchService.getMatch(params.id)
+      .then((m) => setMatch(m))
+      .catch(() => setError(true))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { load(); }, [params.id]);
 
   const handleAction = async (
     decision: ProductMatch['decision'],
@@ -94,6 +100,17 @@ export default function MatchDetailPage({ params }: PageProps) {
       setActing(false);
     }
   };
+
+  if (error) {
+    return (
+      <AppShell>
+        <PageHeader title="Error" />
+        <div className="p-6">
+          <ErrorState onRetry={load} />
+        </div>
+      </AppShell>
+    );
+  }
 
   if (loading) {
     return (
