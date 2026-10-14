@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "CatalogAI Capture",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Captura productos desde cualquier pagina web y envialos a CatalogAI",
   "permissions": ["activeTab", "storage", "contextMenus", "scripting"],
   "host_permissions": ["<all_urls>"],

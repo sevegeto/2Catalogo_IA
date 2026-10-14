@@ -52,6 +52,27 @@
     });
   });
 
+  function isRestrictedPage(url) {
+    return !url || /^(chrome|edge|about|chrome-extension|devtools|view-source|file):/i.test(url) || url.startsWith('https://chromewebstore.google.com');
+  }
+
+  async function requestProduct(tab) {
+    if (!tab.id || isRestrictedPage(tab.url)) {
+      throw new Error('Chrome no permite leer esta pestaña. Abre una página normal de producto y vuelve a intentarlo.');
+    }
+
+    try {
+      return await chrome.tabs.sendMessage(tab.id, { type: 'CAPTURE_PRODUCT' });
+    } catch (_messageError) {
+      try {
+        await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
+        return await chrome.tabs.sendMessage(tab.id, { type: 'CAPTURE_PRODUCT' });
+      } catch (_injectionError) {
+        throw new Error('No se pudo activar el lector. Recarga la página del producto y vuelve a intentarlo.');
+      }
+    }
+  }
+
   captureBtn.addEventListener('click', async () => {
     clearStatus();
     previewEl.classList.remove('visible');
@@ -73,20 +94,7 @@
         return;
       }
 
-      let response;
-      try {
-        response = await chrome.tabs.sendMessage(tab.id, { type: 'CAPTURE_PRODUCT' });
-      } catch (messageError) {
-        if (!chrome.scripting || !tab.url || /^(chrome|edge|about|https:\/\/chromewebstore\.google\.com)/i.test(tab.url)) {
-          throw new Error('Chrome no permite leer esta pagina. Abre una pagina normal de producto y vuelve a intentarlo.');
-        }
-        try {
-          await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
-          response = await chrome.tabs.sendMessage(tab.id, { type: 'CAPTURE_PRODUCT' });
-        } catch (injectionError) {
-          throw new Error('Actualiza la extension en chrome://extensions y recarga la pagina del producto.');
-        }
-      }
+      const response = await requestProduct(tab);
 
       if (!response || !response.success) {
         showStatus(response?.error || 'No se pudo extraer el producto', 'error');

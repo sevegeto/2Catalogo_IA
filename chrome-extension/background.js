@@ -6,22 +6,30 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
+function isRestrictedPage(url) {
+  return !url || /^(chrome|edge|about|chrome-extension|devtools|view-source|file):/i.test(url) || url.startsWith('https://chromewebstore.google.com');
+}
+
+async function requestProduct(tabId, tabUrl) {
+  if (isRestrictedPage(tabUrl)) return null;
+
+  try {
+    return await chrome.tabs.sendMessage(tabId, { type: 'CAPTURE_PRODUCT' });
+  } catch (_messageError) {
+    try {
+      await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
+      return await chrome.tabs.sendMessage(tabId, { type: 'CAPTURE_PRODUCT' });
+    } catch (_injectionError) {
+      console.error('CatalogAI: no se puede leer esta pagina.');
+      return null;
+    }
+  }
+}
+
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId !== 'catalogai-capture' || !tab?.id) return;
 
-  let response;
-  try {
-    response = await chrome.tabs.sendMessage(tab.id, { type: 'CAPTURE_PRODUCT' });
-  } catch (messageError) {
-    if (!tab.url || /^(chrome|edge|about|https:\/\/chromewebstore\.google\.com)/i.test(tab.url)) return;
-    try {
-      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
-      response = await chrome.tabs.sendMessage(tab.id, { type: 'CAPTURE_PRODUCT' });
-    } catch (injectionError) {
-      console.error('CatalogAI: no se puede leer esta pagina.');
-      return;
-    }
-  }
+  const response = await requestProduct(tab.id, tab.url);
 
   if (!response?.success) return;
 
