@@ -1,26 +1,16 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { readFileSync } from 'node:fs';
-import { PGlite } from '@electric-sql/pglite';
+import { actAs, database, USERS } from './support/database';
 import { captureAssets } from '../lib/captures/import';
 import { findCaptureMatches } from '../lib/captures/matching';
 import { mockCaptures, mockProducts, mockIdentifiers, mockImages, mockVariants } from '../lib/mock/data';
 import { captureMutations } from '../lib/services';
 
-async function database() {
-  const db = new PGlite();
-  await db.exec('CREATE ROLE anon; CREATE ROLE authenticated;');
-  for (const file of ['20261009103755_create_catalog_schema.sql', '20261014140000_promote_capture.sql', '20261014141000_capture_matching.sql']) {
-    await db.exec(readFileSync(new URL(`../supabase/migrations/${file}`, import.meta.url), 'utf8'));
-  }
-  await db.exec('GRANT USAGE ON SCHEMA public TO anon, authenticated; GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated;');
-  return db;
-}
-
 test('SQL: promoción atómica, imágenes únicas, identificadores y variante; reintentos reutilizan producto', async () => {
   const db = await database();
   try {
-    await db.exec("SET ROLE anon; INSERT INTO captures(id,source_type,captured_title,captured_upc,captured_asin,captured_mpn,captured_price,captured_currency,captured_images) VALUES ('assets','MANUAL','Importado','1234-5678-9012',' b000000001 ',' X-123 ',0,'MXN',ARRAY['https://example.com/a.png','https://example.com/a.png','javascript:alert(1)','https://example.com/b.png']);");
+    await actAs(db, 'editor');
+    await db.exec("INSERT INTO captures(id,source_type,captured_title,captured_upc,captured_asin,captured_mpn,captured_price,captured_currency,captured_images) VALUES ('assets','MANUAL','Importado','1234-5678-9012',' b000000001 ',' X-123 ',0,'MXN',ARRAY['https://example.com/a.png','https://example.com/a.png','javascript:alert(1)','https://example.com/b.png']);");
     const first = (await db.query<{ id: string; default_variant_id: string; primary_image_url: string }>("SELECT * FROM promote_capture_to_product('assets')")).rows[0];
     const second = (await db.query<{ id: string }>("SELECT * FROM promote_capture_to_product('assets')")).rows[0];
     assert.equal(second.id, first.id);
@@ -40,6 +30,7 @@ test('SQL: promoción atómica, imágenes únicas, identificadores y variante; r
     assert.ok(variant.internal_sku.endsWith('-01'));
     assert.deepEqual((await db.query('SELECT status,assigned_product_id,assigned_variant_id FROM captures')).rows[0], { status: 'COMPLETED', assigned_product_id: first.id, assigned_variant_id: variant.id });
     assert.equal((await db.query('SELECT id FROM products')).rows.length, 1);
+    assert.equal((await db.query<{ created_by: string }>('SELECT created_by FROM products')).rows[0].created_by, USERS.editor);
   } finally { await db.close(); }
 });
 
@@ -69,9 +60,10 @@ test('SQL: captura sin códigos ni imágenes conserva un borrador válido; una c
 test('SQL: la función de promoción respeta RLS del usuario', async () => {
   const db = await database();
   try {
-    await db.exec("INSERT INTO captures(id,source_type,captured_title) VALUES ('private','MANUAL','Privada'); DROP POLICY anon_insert_products ON products; SET ROLE anon;");
+    await db.exec("INSERT INTO captures(id,source_type,captured_title) VALUES ('private','MANUAL','Privada'); DROP POLICY catalog_insert ON products;");
+    await actAs(db, 'editor');
     await assert.rejects(db.query("SELECT * FROM promote_capture_to_product('private')"), /row-level security/);
-    await db.exec('RESET ROLE;');
+    await actAs(db, 'superuser');
     assert.equal((await db.query('SELECT id FROM products')).rows.length, 0);
   } finally { await db.close(); }
 });
@@ -85,7 +77,9 @@ test('SQL: trigger automático por UPC/ASIN/marca+modelo, conflictos, múltiples
       ('archived','P3','Archivado','archivado','Marca','M1','ARCHIVED');
       INSERT INTO product_identifiers(id,product_id,identifier_type,identifier_value) VALUES
       ('i1','p1','UPC_A','123456789012'), ('i2','p2','ASIN','B000000002');
-      SET ROLE anon;
+    `);
+    await actAs(db, 'editor');
+    await db.exec(`
       INSERT INTO captures(id,source_type,captured_title,captured_upc) VALUES ('upc','MANUAL','UPC','0123456789012');
       INSERT INTO captures(id,source_type,captured_title,captured_asin) VALUES ('asin','MANUAL','ASIN','b000000002');
       INSERT INTO captures(id,source_type,captured_title,captured_brand,captured_model) VALUES ('brand','MANUAL','Marca',' marca ',' m1 ');
