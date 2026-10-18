@@ -1,0 +1,170 @@
+/*
+ * CatalogAI Capture — sesión y envío a Supabase.
+ * Lo usan popup.js (como <script>) y background.js (con importScripts).
+ *
+ * - Inicia sesión con correo y contraseña de un usuario de CatalogAI (rol editor o admin).
+ * - Guarda solo los tokens de sesión en chrome.storage.local; nunca la contraseña.
+ * - Renueva el access token con el refresh token antes de que expire.
+ * - Inserta capturas con el JWT del usuario; la base fija captured_by con auth.uid().
+ */
+(function (global) {
+  const STORAGE_KEYS = ['supabaseUrl', 'supabaseKey', 'session'];
+
+  async function getConfig() {
+    const stored = await chrome.storage.local.get(STORAGE_KEYS);
+    return {
+      url: stored.supabaseUrl || '',
+      key: stored.supabaseKey || '',
+      session: stored.session || null,
+    };
+  }
+
+  function normalizeUrl(value) {
+    const url = String(value || '').trim().replace(/\/+$/, '');
+    if (!/^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(url)) {
+      throw new Error('La URL de Supabase debe ser https://<proyecto>.supabase.co');
+    }
+    return url;
+  }
+
+  async function saveConfig(url, key) {
+    const cleanUrl = normalizeUrl(url);
+    const cleanKey = String(key || '').trim();
+    if (!cleanKey) throw new Error('Falta la Anon Key');
+    const current = await getConfig();
+    const changed = current.url !== cleanUrl || current.key !== cleanKey;
+    await chrome.storage.local.set({ supabaseUrl: cleanUrl, supabaseKey: cleanKey });
+    // Una sesión pertenece a un proyecto: si cambia la configuración, se descarta.
+    if (changed) await chrome.storage.local.remove('session');
+  }
+
+  function toSession(body) {
+    return {
+      accessToken: body.access_token,
+      refreshToken: body.refresh_token,
+      expiresAt: body.expires_at || Math.floor(Date.now() / 1000) + (body.expires_in || 3600),
+      email: body.user && body.user.email ? body.user.email : '',
+    };
+  }
+
+  async function authRequest(config, path, payload, accessToken) {
+    const response = await fetch(`${config.url}/auth/v1/${path}`, {
+      method: 'POST',
+      headers: {
+        apikey: config.key,
+        Authorization: `Bearer ${accessToken || config.key}`,
+        'Content-Type': 'application/json',
+      },
+      body: payload ? JSON.stringify(payload) : undefined,
+    });
+    const body = await response.json().catch(() => ({}));
+    return { ok: response.ok, status: response.status, body };
+  }
+
+  async function signIn(email, password) {
+    const config = await getConfig();
+    if (!config.url || !config.key) throw new Error('Configura Supabase primero');
+    const result = await authRequest(config, 'token?grant_type=password', {
+      email: String(email || '').trim(),
+      password: String(password || ''),
+    });
+    if (!result.ok || !result.body.access_token) {
+      throw new Error(result.status === 400 ? 'Correo o contraseña incorrectos' : `No se pudo iniciar sesión (HTTP ${result.status})`);
+    }
+    const session = toSession(result.body);
+    await chrome.storage.local.set({ session });
+    return session;
+  }
+
+  async function refresh(config) {
+    if (!config.session || !config.session.refreshToken) return null;
+    const result = await authRequest(config, 'token?grant_type=refresh_token', {
+      refresh_token: config.session.refreshToken,
+    });
+    if (!result.ok || !result.body.access_token) {
+      await chrome.storage.local.remove('session');
+      return null;
+    }
+    const session = toSession(result.body);
+    await chrome.storage.local.set({ session });
+    return session;
+  }
+
+  /** Sesión vigente (renovada si expira en menos de un minuto) o null. */
+  async function getSession() {
+    const config = await getConfig();
+    if (!config.session) return null;
+    if (config.session.expiresAt - 60 > Math.floor(Date.now() / 1000)) return config.session;
+    return refresh(config);
+  }
+
+  async function signOut() {
+    const config = await getConfig();
+    if (config.session && config.url && config.key) {
+      await authRequest(config, 'logout', null, config.session.accessToken).catch(() => null);
+    }
+    await chrome.storage.local.remove('session');
+  }
+
+  function buildCapture(product, tabUrl) {
+    return {
+      id: 'cap_' + crypto.randomUUID(),
+      source_type: 'CHROME_EXTENSION',
+      source_url: tabUrl,
+      source_domain: new URL(tabUrl).hostname,
+      captured_title: product.title || 'Sin titulo',
+      captured_description: product.description || null,
+      captured_brand: product.brand || null,
+      captured_model: product.model || null,
+      captured_mpn: product.mpn || null,
+      captured_upc: product.upc || null,
+      captured_asin: product.asin || null,
+      captured_price: product.price || null,
+      captured_currency: product.currency || 'MXN',
+      captured_attributes: product.attributes || {},
+      captured_images: product.images || [],
+      raw_payload: JSON.parse(JSON.stringify(product)),
+      status: 'RECEIVED',
+      captured_at: new Date().toISOString(),
+    };
+  }
+
+  async function postCapture(config, session, data) {
+    return fetch(`${config.url}/rest/v1/captures`, {
+      method: 'POST',
+      headers: {
+        apikey: config.key,
+        Authorization: `Bearer ${session.accessToken}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify(data),
+    });
+  }
+
+  async function submitCapture(product, tabUrl) {
+    const config = await getConfig();
+    if (!config.url || !config.key) throw new Error('Configura Supabase primero');
+    let session = await getSession();
+    if (!session) throw new Error('Inicia sesión en la extensión para enviar capturas');
+
+    const data = buildCapture(product, tabUrl);
+    let response = await postCapture(config, session, data);
+    if (response.status === 401) {
+      session = await refresh(await getConfig());
+      if (!session) throw new Error('La sesión expiró. Vuelve a iniciar sesión');
+      response = await postCapture(config, session, data);
+    }
+    if (response.status === 403 || response.status === 401) {
+      throw new Error('Tu usuario no tiene permiso para capturar (se requiere rol editor o admin)');
+    }
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '');
+      console.error('CatalogAI insert error:', detail);
+      throw new Error(`Error del servidor: ${response.status}`);
+    }
+    return data.id;
+  }
+
+  global.CatalogAI = { getConfig, saveConfig, signIn, signOut, getSession, submitCapture };
+})(typeof self !== 'undefined' ? self : window);
