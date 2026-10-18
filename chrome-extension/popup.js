@@ -11,6 +11,13 @@
   const previewRows = $('preview-rows');
   const previewImages = $('preview-images');
   const connBadge = $('conn-badge');
+  const loginForm = $('login-form');
+  const loginBtn = $('login-btn');
+  const emailInput = $('login-email');
+  const passwordInput = $('login-password');
+  const sessionInfo = $('session-info');
+  const sessionEmail = $('session-email');
+  const logoutBtn = $('logout-btn');
 
   function showStatus(msg, type) {
     statusEl.className = 'status ' + type;
@@ -22,35 +29,63 @@
     statusEl.textContent = '';
   }
 
-  function updateBadge(configured) {
-    if (configured) {
+  async function render() {
+    const config = await CatalogAI.getConfig();
+    if (config.url && !urlInput.value) urlInput.value = config.url;
+    if (config.key && !keyInput.value) keyInput.value = config.key;
+    const session = config.url && config.key ? await CatalogAI.getSession() : null;
+    const configured = !!config.url && !!config.key;
+
+    loginForm.style.display = session ? 'none' : 'block';
+    sessionInfo.style.display = session ? 'block' : 'none';
+    sessionEmail.textContent = session ? session.email : '';
+    loginBtn.disabled = !configured;
+    captureBtn.disabled = !session;
+
+    if (session) {
       connBadge.textContent = 'Conectado';
       connBadge.style.background = 'rgba(74, 222, 128, 0.25)';
     } else {
-      connBadge.textContent = 'No config';
+      connBadge.textContent = configured ? 'Sin sesión' : 'No config';
       connBadge.style.background = 'rgba(255, 255, 255, 0.2)';
     }
   }
 
-  chrome.storage.local.get(['supabaseUrl', 'supabaseKey'], (result) => {
-    if (result.supabaseUrl) urlInput.value = result.supabaseUrl;
-    if (result.supabaseKey) keyInput.value = result.supabaseKey;
-    updateBadge(!!result.supabaseUrl && !!result.supabaseKey);
-  });
-
-  saveBtn.addEventListener('click', () => {
-    const url = urlInput.value.trim().replace(/\/$/, '');
-    const key = keyInput.value.trim();
-    if (!url || !key) {
-      showStatus('Completa la URL y la Anon Key', 'error');
-      return;
-    }
-    chrome.storage.local.set({ supabaseUrl: url, supabaseKey: key }, () => {
-      updateBadge(true);
+  saveBtn.addEventListener('click', async () => {
+    try {
+      await CatalogAI.saveConfig(urlInput.value, keyInput.value);
       showStatus('Configuracion guardada', 'success');
       setTimeout(clearStatus, 2000);
-    });
+    } catch (err) {
+      showStatus(err.message, 'error');
+    }
+    await render();
   });
+
+  loginForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    loginBtn.disabled = true;
+    clearStatus();
+    try {
+      await CatalogAI.signIn(emailInput.value, passwordInput.value);
+      showStatus('Sesión iniciada', 'success');
+      setTimeout(clearStatus, 2000);
+    } catch (err) {
+      showStatus(err.message, 'error');
+    } finally {
+      passwordInput.value = '';
+      await render();
+    }
+  });
+
+  logoutBtn.addEventListener('click', async () => {
+    await CatalogAI.signOut();
+    showStatus('Sesión cerrada', 'info');
+    setTimeout(clearStatus, 2000);
+    await render();
+  });
+
+  render();
 
   function isRestrictedPage(url) {
     return !url || /^(chrome|edge|about|chrome-extension|devtools|view-source|file):/i.test(url) || url.startsWith('https://chromewebstore.google.com');
@@ -77,9 +112,9 @@
     clearStatus();
     previewEl.classList.remove('visible');
 
-    const config = await chrome.storage.local.get(['supabaseUrl', 'supabaseKey']);
-    if (!config.supabaseUrl || !config.supabaseKey) {
-      showStatus('Configura Supabase primero', 'error');
+    if (!(await CatalogAI.getSession())) {
+      showStatus('Inicia sesión para enviar capturas', 'error');
+      await render();
       return;
     }
 
@@ -104,55 +139,16 @@
       const product = response.data;
       showPreview(product);
 
-      const insertData = {
-        id: 'cap_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
-        source_type: 'CHROME_EXTENSION',
-        source_url: tab.url,
-        source_domain: new URL(tab.url).hostname,
-        captured_title: product.title || 'Sin titulo',
-        captured_description: product.description || null,
-        captured_brand: product.brand || null,
-        captured_model: product.model || null,
-        captured_mpn: product.mpn || null,
-        captured_upc: product.upc || null,
-        captured_asin: product.asin || null,
-        captured_price: product.price || null,
-        captured_currency: product.currency || 'MXN',
-        captured_attributes: product.attributes || {},
-        captured_images: product.images || [],
-        raw_payload: JSON.parse(JSON.stringify(product)),
-        status: 'RECEIVED',
-        captured_by: 'chrome_extension',
-        captured_at: new Date().toISOString(),
-      };
-
       showStatus('Enviando a CatalogAI...', 'info');
-
-      const apiResponse = await fetch(`${config.supabaseUrl}/rest/v1/captures`, {
-        method: 'POST',
-        headers: {
-          'apikey': config.supabaseKey,
-          'Authorization': `Bearer ${config.supabaseKey}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'return=minimal',
-        },
-        body: JSON.stringify(insertData),
-      });
-
-      if (!apiResponse.ok) {
-        const errBody = await apiResponse.text();
-        showStatus(`Error del servidor: ${apiResponse.status}`, 'error');
-        console.error('Insert error:', errBody);
-        return;
-      }
+      await CatalogAI.submitCapture(product, tab.url);
 
       showStatus('Producto capturado y enviado a CatalogAI', 'success');
     } catch (err) {
       showStatus('Error: ' + (err.message || 'desconocido'), 'error');
       console.error('Capture error:', err);
     } finally {
-      captureBtn.disabled = false;
       captureBtn.innerHTML = originalHTML;
+      await render();
     }
   });
 

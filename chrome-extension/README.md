@@ -13,9 +13,14 @@ Extension de Chrome para capturar productos desde cualquier pagina web y enviarl
 ## Configuracion
 
 1. Haz clic en el icono de CatalogAI en la barra de herramientas
-2. Ingresa la URL de tu proyecto de Supabase (ej. `https://ddtdgakvjospwoopdjds.supabase.co`)
-3. Ingresa la Anon Key de Supabase (la encuentras en Project Settings > API)
+2. Ingresa la URL de tu proyecto de Supabase (`https://<proyecto>.supabase.co`, solo HTTPS)
+3. Ingresa la Anon Key de Supabase (Project Settings > API). Es la clave publica; **nunca** uses la `service_role`
 4. Haz clic en "Guardar configuracion"
+5. En **Cuenta**, inicia sesion con tu usuario de CatalogAI. Necesita rol `editor` o `admin`
+
+La extension guarda solo los tokens de sesion en `chrome.storage.local` (nunca la contraseña) y los renueva
+automaticamente. Si cambias la URL o la clave, la sesion se descarta. El autor de cada captura lo fija la base
+de datos con tu usuario; no se puede indicar otro desde la extension.
 
 ## Uso
 
@@ -29,7 +34,7 @@ Extension de Chrome para capturar productos desde cualquier pagina web y enviarl
 ### Desde el menu contextual
 1. Haz clic derecho en cualquier pagina de producto
 2. Selecciona "Capturar producto en CatalogAI"
-3. El producto se enviara silenciosamente a CatalogAI
+3. El icono muestra ✓ si se envio o ! si fallo (pasa el cursor para ver el motivo, p. ej. sesion cerrada)
 
 ## Que se extrae
 

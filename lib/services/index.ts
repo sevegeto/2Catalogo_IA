@@ -1178,7 +1178,8 @@ export interface IntegrationConfig {
   name: string;
   category: string;
   enabled: boolean;
-  credentials: Record<string, string>;
+  /** Nombres de los secretos configurados. Los valores nunca llegan al navegador. */
+  secretFields: string[];
   settings: Record<string, string>;
   lastConnectedAt: string | null;
   lastError: string | null;
@@ -1191,7 +1192,7 @@ function mapIntegration(r: DbRow): IntegrationConfig {
     name: r.name as string,
     category: r.category as string,
     enabled: r.enabled as boolean,
-    credentials: (r.credentials as Record<string, string>) ?? {},
+    secretFields: (r.secret_fields as string[]) ?? [],
     settings: (r.settings as Record<string, string>) ?? {},
     lastConnectedAt: (r.last_connected_at as string) ?? null,
     lastError: (r.last_error as string) ?? null,
@@ -1200,11 +1201,11 @@ function mapIntegration(r: DbRow): IntegrationConfig {
 }
 
 const defaultIntegrations: IntegrationConfig[] = [
-  { id: 'mercadolibre', name: 'MercadoLibre', category: 'marketplace', enabled: true, credentials: {}, settings: { site: 'MLM', accountName: 'MITIENDOTA' }, lastConnectedAt: null, lastError: null, updatedAt: '' },
-  { id: 'google_sheets', name: 'Google Sheets', category: 'sheets', enabled: false, credentials: {}, settings: {}, lastConnectedAt: null, lastError: null, updatedAt: '' },
-  { id: 'google_drive', name: 'Google Drive', category: 'storage', enabled: false, credentials: {}, settings: {}, lastConnectedAt: null, lastError: null, updatedAt: '' },
-  { id: 'chrome_extension', name: 'Extension Chrome', category: 'extension', enabled: false, credentials: {}, settings: {}, lastConnectedAt: null, lastError: null, updatedAt: '' },
-  { id: 'ollama_worker', name: 'Ollama Worker', category: 'ai_worker', enabled: false, credentials: {}, settings: { host: 'localhost', port: '11434' }, lastConnectedAt: null, lastError: null, updatedAt: '' },
+  { id: 'mercadolibre', name: 'MercadoLibre', category: 'marketplace', enabled: true, secretFields: [], settings: { site: 'MLM', accountName: 'MITIENDOTA' }, lastConnectedAt: null, lastError: null, updatedAt: '' },
+  { id: 'google_sheets', name: 'Google Sheets', category: 'sheets', enabled: false, secretFields: [], settings: {}, lastConnectedAt: null, lastError: null, updatedAt: '' },
+  { id: 'google_drive', name: 'Google Drive', category: 'storage', enabled: false, secretFields: [], settings: {}, lastConnectedAt: null, lastError: null, updatedAt: '' },
+  { id: 'chrome_extension', name: 'Extension Chrome', category: 'extension', enabled: false, secretFields: [], settings: {}, lastConnectedAt: null, lastError: null, updatedAt: '' },
+  { id: 'ollama_worker', name: 'Ollama Worker', category: 'ai_worker', enabled: false, secretFields: [], settings: { host: 'localhost', port: '11434' }, lastConnectedAt: null, lastError: null, updatedAt: '' },
 ];
 
 export const integrationService = {
@@ -1230,20 +1231,47 @@ export const integrationService = {
 
   async update(id: string, updates: {
     enabled?: boolean;
-    credentials?: Record<string, string>;
     settings?: Record<string, string>;
   }): Promise<void> {
-    if (isDemoMode()) { await delay(); return; }
+    if (isDemoMode()) {
+      await delay();
+      const demo = defaultIntegrations.find((i) => i.id === id);
+      if (demo) {
+        if (updates.enabled !== undefined) demo.enabled = updates.enabled;
+        if (updates.settings !== undefined) demo.settings = updates.settings;
+      }
+      return;
+    }
     const snakeUpdates: Record<string, unknown> = { updated_at: new Date().toISOString() };
     if (updates.enabled !== undefined) snakeUpdates.enabled = updates.enabled;
-    if (updates.credentials !== undefined) snakeUpdates.credentials = updates.credentials;
     if (updates.settings !== undefined) snakeUpdates.settings = updates.settings;
-    if (updates.enabled === true) {
-      snakeUpdates.last_connected_at = new Date().toISOString();
-      snakeUpdates.last_error = null;
-    }
     const { error } = await getSupabase().from('integration_configs').update(snakeUpdates).eq('id', id);
     if (error) throw error;
+  },
+
+  /**
+   * Guarda secretos (solo admin). Texto → reemplaza; '' → sin cambios; null → elimina.
+   * Devuelve los nombres de los secretos configurados.
+   */
+  async setSecrets(id: string, secrets: Record<string, string | null>): Promise<string[]> {
+    if (isDemoMode()) {
+      await delay();
+      const demo = defaultIntegrations.find((i) => i.id === id);
+      if (!demo) throw new Error('Integración no encontrada');
+      const fields = new Set(demo.secretFields);
+      for (const [key, value] of Object.entries(secrets)) {
+        if (value === null) fields.delete(key);
+        else if (value.trim()) fields.add(key);
+      }
+      demo.secretFields = Array.from(fields).sort();
+      return demo.secretFields;
+    }
+    const { data, error } = await getSupabase().rpc('set_integration_secrets', {
+      p_integration_id: id,
+      p_secrets: secrets,
+    });
+    if (error) throw error;
+    return (data as string[]) ?? [];
   },
 
   async testConnection(id: string): Promise<{ success: boolean; message: string }> {
@@ -1258,24 +1286,20 @@ export const integrationService = {
         return { success: false, message: `No se puede conectar a ${host}:${port} en modo demo` };
       }
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/test-ollama`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ host, port }),
-        });
-        if (!response.ok) {
-          const body = await response.json().catch(() => ({}));
-          return { success: false, message: body.error || `HTTP ${response.status}` };
+        // invoke() envía el JWT del usuario; la función valida que sea admin.
+        const { data, error } = await getSupabase().functions.invoke('test-ollama', { body: { host, port } });
+        if (error) {
+          const body = await (error as { context?: Response }).context?.json?.().catch(() => null);
+          const errMsg = body?.error || error.message;
+          await this.updateError(id, errMsg);
+          return { success: false, message: errMsg };
         }
-        const data = await response.json();
-        if (data.success) {
+        if (data?.success) {
           await this.update(id, { enabled: true });
+          await this.markConnected(id);
           return { success: true, message: data.message || `Conexion exitosa a ${host}:${port}` };
         }
-        const errMsg = data.error || `No se pudo conectar a ${host}:${port}`;
+        const errMsg = data?.error || `No se pudo conectar a ${host}:${port}`;
         await this.updateError(id, errMsg);
         return { success: false, message: errMsg };
       } catch (_e) {
@@ -1285,11 +1309,21 @@ export const integrationService = {
       }
     }
 
+    // Sin sincronización implementada todavía: solo se informa la configuración guardada.
     if (config.enabled) {
-      await this.update(id, { enabled: true });
-      return { success: true, message: `${config.name} esta activo` };
+      return { success: true, message: `${config.name} está activado. La conexión real se verificará cuando exista la sincronización.` };
     }
-    return { success: false, message: `${config.name} no esta configurado` };
+    return { success: false, message: `${config.name} no está configurado` };
+  },
+
+  async markConnected(id: string): Promise<void> {
+    if (isDemoMode()) return;
+    const now = new Date().toISOString();
+    const { error } = await getSupabase()
+      .from('integration_configs')
+      .update({ last_connected_at: now, last_error: null, updated_at: now })
+      .eq('id', id);
+    if (error) throw error;
   },
 
   async updateError(id: string, errorMsg: string): Promise<void> {

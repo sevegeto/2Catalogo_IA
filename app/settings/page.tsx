@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import {
   Database, Shield, Bell, Users, Save, Check, Store, FileSpreadsheet,
-  HardDrive, Chrome, Cpu, Loader2, RefreshCw, AlertCircle,
+  HardDrive, Chrome, Cpu, Loader2, RefreshCw, AlertCircle, KeyRound,
 } from 'lucide-react';
 import { AppShell } from '@/components/layout/app-shell';
 import { PageHeader } from '@/components/layout/page-header';
@@ -15,12 +15,15 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useDemoMode } from '@/lib/demo-mode';
+import { useAuth } from '@/lib/auth';
 import {
   settingsService, integrationService, type AppSettings, type IntegrationConfig,
 } from '@/lib/services';
 
 export default function SettingsPage() {
   const { demoMode } = useDemoMode();
+  const { role } = useAuth();
+  const canAdmin = demoMode || role === 'admin';
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [integrations, setIntegrations] = useState<IntegrationConfig[]>([]);
   const [loading, setLoading] = useState(true);
@@ -31,9 +34,11 @@ export default function SettingsPage() {
   const [testingId, setTestingId] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<Record<string, { success: boolean; message: string }>>({});
 
-  const [mlCreds, setMlCreds] = useState({ clientId: '', clientSecret: '', refreshToken: '', sellerId: '' });
-  const [sheetsCreds, setSheetsCreds] = useState({ serviceAccountEmail: '', privateKey: '', spreadsheetId: '' });
-  const [driveCreds, setDriveCreds] = useState({ serviceAccountEmail: '', privateKey: '', folderId: '' });
+  const [saveError, setSaveError] = useState<Record<string, string>>({});
+  // Los secretos son de solo escritura: '' conserva el valor guardado, null lo elimina.
+  const [mlCreds, setMlCreds] = useState<{ clientId: string; sellerId: string; clientSecret: SecretDraft; refreshToken: SecretDraft }>({ clientId: '', sellerId: '', clientSecret: '', refreshToken: '' });
+  const [sheetsCreds, setSheetsCreds] = useState<{ serviceAccountEmail: string; spreadsheetId: string; privateKey: SecretDraft }>({ serviceAccountEmail: '', spreadsheetId: '', privateKey: '' });
+  const [driveCreds, setDriveCreds] = useState<{ serviceAccountEmail: string; folderId: string; privateKey: SecretDraft }>({ serviceAccountEmail: '', folderId: '', privateKey: '' });
   const [ollamaSettings, setOllamaSettings] = useState({ host: 'localhost', port: '11434' });
 
   useEffect(() => {
@@ -44,25 +49,25 @@ export default function SettingsPage() {
         const ml = ints.find((i) => i.id === 'mercadolibre');
         if (ml) {
           setMlCreds({
-            clientId: ml.credentials.clientId ?? '',
-            clientSecret: ml.credentials.clientSecret ?? '',
-            refreshToken: ml.credentials.refreshToken ?? '',
-            sellerId: ml.credentials.sellerId ?? ml.settings.sellerId ?? '',
+            clientId: ml.settings.clientId ?? '',
+            sellerId: ml.settings.sellerId ?? '',
+            clientSecret: '',
+            refreshToken: '',
           });
         }
         const sheets = ints.find((i) => i.id === 'google_sheets');
         if (sheets) {
           setSheetsCreds({
-            serviceAccountEmail: sheets.credentials.serviceAccountEmail ?? '',
-            privateKey: sheets.credentials.privateKey ?? '',
+            serviceAccountEmail: sheets.settings.serviceAccountEmail ?? '',
+            privateKey: '',
             spreadsheetId: sheets.settings.spreadsheetId ?? '',
           });
         }
         const drive = ints.find((i) => i.id === 'google_drive');
         if (drive) {
           setDriveCreds({
-            serviceAccountEmail: drive.credentials.serviceAccountEmail ?? '',
-            privateKey: drive.credentials.privateKey ?? '',
+            serviceAccountEmail: drive.settings.serviceAccountEmail ?? '',
+            privateKey: '',
             folderId: drive.settings.folderId ?? '',
           });
         }
@@ -74,7 +79,8 @@ export default function SettingsPage() {
           });
         }
         setLoading(false);
-      });
+      })
+      .catch(() => setLoading(false));
   }, []);
 
   const update = (key: keyof AppSettings, value: boolean) => {
@@ -95,29 +101,34 @@ export default function SettingsPage() {
 
   const handleSaveIntegration = async (id: string) => {
     setSavingIntegration(id);
+    setSaveError((prev) => ({ ...prev, [id]: '' }));
+    const current = integrations.find((i) => i.id === id)?.settings ?? {};
     try {
       if (id === 'mercadolibre') {
         await integrationService.update(id, {
           enabled: true,
-          credentials: mlCreds,
-          settings: { site: 'MLM', accountName: 'MITIENDOTA', sellerId: mlCreds.sellerId },
+          settings: { ...current, site: current.site || 'MLM', accountName: current.accountName || 'MITIENDOTA', clientId: mlCreds.clientId.trim(), sellerId: mlCreds.sellerId.trim() },
         });
+        await integrationService.setSecrets(id, secretPayload({ clientSecret: mlCreds.clientSecret, refreshToken: mlCreds.refreshToken }));
+        setMlCreds((prev) => ({ ...prev, clientSecret: '', refreshToken: '' }));
       } else if (id === 'google_sheets') {
         await integrationService.update(id, {
-          enabled: !!sheetsCreds.serviceAccountEmail,
-          credentials: { serviceAccountEmail: sheetsCreds.serviceAccountEmail, privateKey: sheetsCreds.privateKey },
-          settings: { spreadsheetId: sheetsCreds.spreadsheetId },
+          enabled: !!sheetsCreds.serviceAccountEmail.trim(),
+          settings: { ...current, serviceAccountEmail: sheetsCreds.serviceAccountEmail.trim(), spreadsheetId: sheetsCreds.spreadsheetId.trim() },
         });
+        await integrationService.setSecrets(id, secretPayload({ privateKey: sheetsCreds.privateKey }));
+        setSheetsCreds((prev) => ({ ...prev, privateKey: '' }));
       } else if (id === 'google_drive') {
         await integrationService.update(id, {
-          enabled: !!driveCreds.serviceAccountEmail,
-          credentials: { serviceAccountEmail: driveCreds.serviceAccountEmail, privateKey: driveCreds.privateKey },
-          settings: { folderId: driveCreds.folderId },
+          enabled: !!driveCreds.serviceAccountEmail.trim(),
+          settings: { ...current, serviceAccountEmail: driveCreds.serviceAccountEmail.trim(), folderId: driveCreds.folderId.trim() },
         });
+        await integrationService.setSecrets(id, secretPayload({ privateKey: driveCreds.privateKey }));
+        setDriveCreds((prev) => ({ ...prev, privateKey: '' }));
       } else if (id === 'ollama_worker') {
         await integrationService.update(id, {
           enabled: true,
-          settings: ollamaSettings,
+          settings: { ...current, ...ollamaSettings },
         });
       } else if (id === 'chrome_extension') {
         await integrationService.update(id, {
@@ -128,7 +139,9 @@ export default function SettingsPage() {
       setTimeout(() => setSavedIntegration(null), 3000);
       const updated = await integrationService.getAll();
       setIntegrations(updated);
-    } catch (_e) { /* */ }
+    } catch (e) {
+      setSaveError((prev) => ({ ...prev, [id]: errorMessage(e) }));
+    }
     setSavingIntegration(null);
   };
 
@@ -151,7 +164,7 @@ export default function SettingsPage() {
         title="Configuracion"
         description="Preferencias del sistema, integraciones y conexion con base de datos."
         actions={
-          <Button size="sm" onClick={handleSaveSettings} disabled={loading || savingSettings}>
+          <Button size="sm" onClick={handleSaveSettings} disabled={!canAdmin || loading || savingSettings}>
             {savedSettings ? (
               <><Check className="mr-1.5 h-4 w-4" />Guardado</>
             ) : (
@@ -223,8 +236,10 @@ export default function SettingsPage() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-2 text-sm text-muted-foreground">
-                    <p>Roles disponibles: OWNER, ADMIN, CATALOG_MANAGER, INVENTORY_MANAGER, REVIEWER, OPERATOR, VIEWER.</p>
-                    <p>La gestion detallada de usuarios estara disponible en la siguiente fase.</p>
+                    <p><span className="font-medium text-foreground">admin</span>: configuracion, integraciones, credenciales, usuarios y auditoria.</p>
+                    <p><span className="font-medium text-foreground">editor</span>: altas, ediciones y bajas del catalogo, capturas e inventario.</p>
+                    <p><span className="font-medium text-foreground">viewer</span>: solo lectura.</p>
+                    <p>Tu rol actual: <Badge variant="outline">{role ?? (demoMode ? 'demo' : 'sin rol')}</Badge>. Los usuarios se crean en Supabase (Authentication) y su rol en la tabla user_roles.</p>
                   </CardContent>
                 </Card>
               </>
@@ -253,26 +268,22 @@ export default function SettingsPage() {
                       className="h-9 font-mono text-xs"
                     />
                   </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">Client Secret</Label>
-                    <Input
-                      type="password"
-                      value={mlCreds.clientSecret}
-                      onChange={(e) => setMlCreds({ ...mlCreds, clientSecret: e.target.value })}
-                      placeholder="Secret key"
-                      className="h-9 font-mono text-xs"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">Refresh Token</Label>
-                    <Input
-                      type="password"
-                      value={mlCreds.refreshToken}
-                      onChange={(e) => setMlCreds({ ...mlCreds, refreshToken: e.target.value })}
-                      placeholder="Token de refresco"
-                      className="h-9 font-mono text-xs"
-                    />
-                  </div>
+                  <SecretInput
+                    label="Client Secret"
+                    configured={!!getInt('mercadolibre')?.secretFields.includes('clientSecret')}
+                    value={mlCreds.clientSecret}
+                    onChange={(v) => setMlCreds({ ...mlCreds, clientSecret: v })}
+                    placeholder="Secret key"
+                    disabled={!canAdmin}
+                  />
+                  <SecretInput
+                    label="Refresh Token"
+                    configured={!!getInt('mercadolibre')?.secretFields.includes('refreshToken')}
+                    value={mlCreds.refreshToken}
+                    onChange={(v) => setMlCreds({ ...mlCreds, refreshToken: v })}
+                    placeholder="Token de refresco"
+                    disabled={!canAdmin}
+                  />
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground">Seller ID</Label>
                     <Input
@@ -287,13 +298,14 @@ export default function SettingsPage() {
                   Obtienes estas credenciales en el portal de desarrolladores de MercadoLibre (developers.mercadolivre.com.mx).
                   Crea una aplicacion y copia el Client ID, Secret y genera un Refresh Token via OAuth.
                 </div>
+                {saveError.mercadolibre ? <p className="text-xs text-destructive">{saveError.mercadolibre}</p> : null}
                 {testResult.mercadolibre && (
                   <div className={`rounded-md p-3 text-xs ${testResult.mercadolibre.success ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400' : 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400'}`}>
                     {testResult.mercadolibre.message}
                   </div>
                 )}
                 <div className="flex items-center gap-2">
-                  <Button size="sm" onClick={() => handleSaveIntegration('mercadolibre')} disabled={savingIntegration === 'mercadolibre'}>
+                  <Button size="sm" onClick={() => handleSaveIntegration('mercadolibre')} disabled={!canAdmin || savingIntegration === 'mercadolibre'}>
                     {savedIntegration === 'mercadolibre' ? <><Check className="mr-1.5 h-4 w-4" />Guardado</> : <><Save className="mr-1.5 h-4 w-4" />Guardar credenciales</>}
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => handleTestConnection('mercadolibre')} disabled={testingId === 'mercadolibre'}>
@@ -327,16 +339,14 @@ export default function SettingsPage() {
                       className="h-9 font-mono text-xs"
                     />
                   </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">Private Key</Label>
-                    <Input
-                      type="password"
-                      value={sheetsCreds.privateKey}
-                      onChange={(e) => setSheetsCreds({ ...sheetsCreds, privateKey: e.target.value })}
-                      placeholder="-----BEGIN PRIVATE KEY-----"
-                      className="h-9 font-mono text-xs"
-                    />
-                  </div>
+                  <SecretInput
+                    label="Private Key"
+                    configured={!!getInt('google_sheets')?.secretFields.includes('privateKey')}
+                    value={sheetsCreds.privateKey}
+                    onChange={(v) => setSheetsCreds({ ...sheetsCreds, privateKey: v })}
+                    placeholder="-----BEGIN PRIVATE KEY-----"
+                    disabled={!canAdmin}
+                  />
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground">Spreadsheet ID</Label>
                     <Input
@@ -347,13 +357,14 @@ export default function SettingsPage() {
                     />
                   </div>
                 </div>
+                {saveError.google_sheets ? <p className="text-xs text-destructive">{saveError.google_sheets}</p> : null}
                 {testResult.google_sheets && (
                   <div className={`rounded-md p-3 text-xs ${testResult.google_sheets.success ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400' : 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400'}`}>
                     {testResult.google_sheets.message}
                   </div>
                 )}
                 <div className="flex items-center gap-2">
-                  <Button size="sm" onClick={() => handleSaveIntegration('google_sheets')} disabled={savingIntegration === 'google_sheets'}>
+                  <Button size="sm" onClick={() => handleSaveIntegration('google_sheets')} disabled={!canAdmin || savingIntegration === 'google_sheets'}>
                     {savedIntegration === 'google_sheets' ? <><Check className="mr-1.5 h-4 w-4" />Guardado</> : <><Save className="mr-1.5 h-4 w-4" />Guardar</>}
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => handleTestConnection('google_sheets')} disabled={testingId === 'google_sheets'}>
@@ -384,16 +395,14 @@ export default function SettingsPage() {
                       className="h-9 font-mono text-xs"
                     />
                   </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">Private Key</Label>
-                    <Input
-                      type="password"
-                      value={driveCreds.privateKey}
-                      onChange={(e) => setDriveCreds({ ...driveCreds, privateKey: e.target.value })}
-                      placeholder="-----BEGIN PRIVATE KEY-----"
-                      className="h-9 font-mono text-xs"
-                    />
-                  </div>
+                  <SecretInput
+                    label="Private Key"
+                    configured={!!getInt('google_drive')?.secretFields.includes('privateKey')}
+                    value={driveCreds.privateKey}
+                    onChange={(v) => setDriveCreds({ ...driveCreds, privateKey: v })}
+                    placeholder="-----BEGIN PRIVATE KEY-----"
+                    disabled={!canAdmin}
+                  />
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground">Folder ID</Label>
                     <Input
@@ -407,13 +416,14 @@ export default function SettingsPage() {
                 <div className="rounded-md bg-blue-50 p-3 text-xs text-blue-700 dark:bg-blue-950/30 dark:text-blue-400">
                   Comparte la carpeta de Drive con el Service Account Email para que la aplicacion pueda leer y escribir archivos.
                 </div>
+                {saveError.google_drive ? <p className="text-xs text-destructive">{saveError.google_drive}</p> : null}
                 {testResult.google_drive && (
                   <div className={`rounded-md p-3 text-xs ${testResult.google_drive.success ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400' : 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400'}`}>
                     {testResult.google_drive.message}
                   </div>
                 )}
                 <div className="flex items-center gap-2">
-                  <Button size="sm" onClick={() => handleSaveIntegration('google_drive')} disabled={savingIntegration === 'google_drive'}>
+                  <Button size="sm" onClick={() => handleSaveIntegration('google_drive')} disabled={!canAdmin || savingIntegration === 'google_drive'}>
                     {savedIntegration === 'google_drive' ? <><Check className="mr-1.5 h-4 w-4" />Guardado</> : <><Save className="mr-1.5 h-4 w-4" />Guardar</>}
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => handleTestConnection('google_drive')} disabled={testingId === 'google_drive'}>
@@ -462,13 +472,14 @@ export default function SettingsPage() {
                   por lo que el host debe ser una IP publica o un dominio accesible desde internet (no un nombre de red local como &quot;xeonfedoraserver&quot;).
                   Si tu servidor esta detras de un router, configura port forwarding en el puerto 11434 o usa un tunnel (ej. Cloudflare Tunnel, Tailscale).
                 </div>
+                {saveError.ollama_worker ? <p className="text-xs text-destructive">{saveError.ollama_worker}</p> : null}
                 {testResult.ollama_worker && (
                   <div className={`rounded-md p-3 text-xs ${testResult.ollama_worker.success ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400' : 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400'}`}>
                     {testResult.ollama_worker.message}
                   </div>
                 )}
                 <div className="flex items-center gap-2">
-                  <Button size="sm" onClick={() => handleSaveIntegration('ollama_worker')} disabled={savingIntegration === 'ollama_worker'}>
+                  <Button size="sm" onClick={() => handleSaveIntegration('ollama_worker')} disabled={!canAdmin || savingIntegration === 'ollama_worker'}>
                     {savedIntegration === 'ollama_worker' ? <><Check className="mr-1.5 h-4 w-4" />Guardado</> : <><Save className="mr-1.5 h-4 w-4" />Guardar</>}
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => handleTestConnection('ollama_worker')} disabled={testingId === 'ollama_worker'}>
@@ -519,7 +530,7 @@ export default function SettingsPage() {
                     size="sm"
                     variant="outline"
                     onClick={() => handleSaveIntegration('chrome_extension')}
-                    disabled={savingIntegration === 'chrome_extension'}
+                    disabled={!canAdmin || savingIntegration === 'chrome_extension'}
                   >
                     {savedIntegration === 'chrome_extension' ? (
                       <><Check className="mr-1.5 h-4 w-4" />Guardado</>
@@ -616,8 +627,8 @@ export default function SettingsPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 text-xs text-muted-foreground">
-                <p>La base de datos esta alojada en Supabase con respaldo automatico diario y replicacion en tiempo real.</p>
-                <p>Las credenciales de integracion se almacenan de forma segura en la tabla de configuracion de integraciones.</p>
+                <p>La base de datos esta alojada en Supabase. El acceso esta protegido con inicio de sesion y politicas RLS por rol.</p>
+                <p>Las credenciales de integracion se guardan en una tabla privada que el navegador no puede leer; aqui solo se muestra si estan configuradas.</p>
                 <p>Para acceso directo a la consola de Supabase, visita supabase.com/dashboard.</p>
               </CardContent>
             </Card>
@@ -625,5 +636,69 @@ export default function SettingsPage() {
         </Tabs>
       </div>
     </AppShell>
+  );
+}
+
+type SecretDraft = string | null;
+
+/** '' = conservar el valor guardado; null = eliminarlo; texto = reemplazarlo. */
+function secretPayload(drafts: Record<string, SecretDraft>): Record<string, string | null> {
+  const payload: Record<string, string | null> = {};
+  for (const [key, value] of Object.entries(drafts)) {
+    if (value === null) payload[key] = null;
+    else if (value.trim()) payload[key] = value.trim();
+  }
+  return payload;
+}
+
+function errorMessage(e: unknown): string {
+  const message = e instanceof Error ? e.message : typeof e === 'object' && e && 'message' in e ? String((e as { message: unknown }).message) : '';
+  if (/administrador|permission|42501|row-level/i.test(message)) return 'Solo un administrador puede guardar esta configuracion.';
+  return message ? `No se pudo guardar: ${message}` : 'No se pudo guardar la configuracion.';
+}
+
+function SecretInput({ label, configured, value, onChange, placeholder, disabled }: {
+  label: string;
+  configured: boolean;
+  value: SecretDraft;
+  onChange: (value: SecretDraft) => void;
+  placeholder: string;
+  disabled?: boolean;
+}) {
+  const removing = value === null;
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <Label className="text-xs text-muted-foreground">{label}</Label>
+        {configured && !removing ? (
+          <span className="flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400">
+            <KeyRound className="h-3 w-3" />Guardado
+          </span>
+        ) : null}
+      </div>
+      <div className="flex gap-1.5">
+        <Input
+          type="password"
+          autoComplete="new-password"
+          value={value ?? ''}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={removing ? 'Se eliminara al guardar' : configured ? 'Deja en blanco para conservar el actual' : placeholder}
+          className="h-9 font-mono text-xs"
+          disabled={disabled || removing}
+        />
+        {configured ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-9 px-2 text-xs"
+            onClick={() => onChange(removing ? '' : null)}
+            disabled={disabled}
+          >
+            {removing ? 'Deshacer' : 'Quitar'}
+          </Button>
+        ) : null}
+      </div>
+    </div>
   );
 }

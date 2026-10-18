@@ -209,7 +209,7 @@
       <rect x="14" y="14" width="7" height="7" rx="1"/>
     </svg>
     <h1>CatalogAI</h1>
-    <span class="badge" id="conn-badge">No config</span>
+    <span class="badge" id="conn-badge">Sin sesión</span>
   </div>
 
   <div class="content">
@@ -224,6 +224,27 @@
         <input type="password" id="supabase-key" placeholder="eyJhbGci..." />
       </div>
       <button class="btn btn-secondary" id="save-config">Guardar configuracion</button>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="section" id="account-section">
+      <div class="section-title">Cuenta</div>
+      <form id="login-form">
+        <div class="field">
+          <label for="login-email">Correo</label>
+          <input type="email" id="login-email" autocomplete="username" placeholder="tu@correo.com" required />
+        </div>
+        <div class="field">
+          <label for="login-password">Contraseña</label>
+          <input type="password" id="login-password" autocomplete="current-password" required />
+        </div>
+        <button class="btn btn-secondary" id="login-btn" type="submit">Iniciar sesión</button>
+      </form>
+      <div id="session-info" style="display:none">
+        <div class="preview-row"><span>Sesión</span><span id="session-email"></span></div>
+        <button class="btn btn-secondary" id="logout-btn" type="button">Cerrar sesión</button>
+      </div>
     </div>
 
     <div class="divider"></div>
@@ -249,9 +270,10 @@
   </div>
 
   <div class="footer">
-    CatalogAI Capture Extension v1.0.0
+    CatalogAI Capture v1.1.0 · requiere rol editor o admin
   </div>
 
+  <script src="api.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

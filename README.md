@@ -9,9 +9,10 @@ El proyecto incluye una interfaz administrativa en Next.js 13.5.1, React 18,
 TypeScript, Tailwind y shadcn/ui; una capa de servicios con datos demo y consultas
 reales a Supabase; migraciones SQL de PostgreSQL; y una extensión Chrome Manifest V3.
 
-**No está terminado para producción.** Hay pantallas funcionales y operaciones
-reales de base de datos, pero faltan autenticación completa, permisos adecuados,
-procesamiento de trabajos e integraciones operativas.
+**No está terminado para producción.** Hay pantallas funcionales, operaciones
+reales de base de datos, inicio de sesión, roles y políticas RLS cerradas (ver
+[Seguridad y acceso](#seguridad-y-acceso)). Faltan procesamiento de trabajos e
+integraciones operativas.
 
 `prisma/schema.prisma` conserva una propuesta anterior para MySQL. La aplicación
 actual no utiliza Prisma ni tiene API Routes implementadas. El despliegue existente
@@ -42,8 +43,9 @@ Nunca coloques una clave `service_role` en variables `NEXT_PUBLIC_*`.
 El indicador Live describe el modo de consulta; no certifica que la conexión haya
 sido probada. Cambiar de modo recarga la página para renovar las consultas.
 
-**Antes de conectar datos sensibles**, corrige las políticas de acceso descritas
-abajo. Las migraciones actuales permiten acceso anónimo amplio.
+Con Supabase configurado, la aplicación exige iniciar sesión (salvo en modo demo).
+Antes de usar datos reales aplica las migraciones de seguridad y crea el primer
+administrador como se explica en [Seguridad y acceso](#seguridad-y-acceso).
 
 ## Validación
 
@@ -57,19 +59,25 @@ npm run start
 El build incluye revisión de tipos y lint. Las funciones de Supabase usan Deno y
 quedan excluidas del chequeo TypeScript de Next.js; necesitan validación propia.
 
+`npm test` ejecuta las pruebas de base de datos (PGlite con todas las migraciones),
+de permisos por rol y del modo demo.
+
 ## Estructura
 
 - `app/`: dashboard, capturas, productos, coincidencias, duplicados, publicaciones,
   inventario, almacenes, proveedores, imágenes, trabajos, integraciones, auditoría,
-  configuración y recuperación de contraseñas.
+  configuración, inicio de sesión y recuperación de contraseñas.
+- `middleware.ts`: exige sesión en las rutas del catálogo cuando Supabase está configurado.
+- `lib/auth.tsx` y `components/layout/auth-gate.tsx`: sesión, rol y bloqueo de la interfaz.
 - `components/products/tabs/`: editor de producto y sus diez pestañas.
 - `lib/services/index.ts`: consultas, mapeo SQL → dominio y mutaciones.
 - `lib/mock/data.ts`: datos de demostración.
 - `lib/runtime-config.ts` y `lib/demo-mode.tsx`: selección de fuente de datos.
-- `lib/supabase/client.ts`: cliente inicializado al solicitar una operación real.
+- `lib/supabase/client.ts`: cliente (sesión en cookies) inicializado al solicitar una operación real.
 - `supabase/migrations/`: esquema PostgreSQL, configuración y políticas RLS.
-- `supabase/functions/test-ollama/`: prueba de conectividad desde Supabase.
-- `chrome-extension/`: lector de productos y envío directo a la tabla `captures`.
+- `supabase/functions/test-ollama/`: prueba de conectividad (solo admin, destinos validados).
+- `chrome-extension/`: lector de productos; inicia sesión y envía a `captures` con el usuario.
+- `tests/`: pruebas de capturas, matching y permisos (`tests/support/database.ts` simula Supabase).
 - `types/index.ts`: tipos del dominio.
 - `prisma/schema.prisma`: propuesta histórica, sin uso en ejecución.
 
@@ -102,14 +110,11 @@ Copia obtenida de `sevegeto/2Catalogo_IA`, rama `main`, commit inicial `e726e2e`
 
 ### Pendientes para terminar el proyecto
 
-1. **Autenticación y permisos.** Existen recuperación y cambio de contraseña, pero
-   no login completo ni protección de las rutas del catálogo. Las migraciones
-   conceden SELECT/INSERT/UPDATE/DELETE a `anon` y `authenticated` con condiciones
-   abiertas. Definir usuarios autorizados y roles antes de cerrar las políticas.
-2. **Secretos de integraciones.** `integration_configs.credentials` guarda claves
-   y tokens en JSON y puede leerse desde el cliente con las políticas actuales.
-   Mover secretos al servidor o un almacén privado y exponer solo configuración
-   no sensible. El cifrado del disco no restringe el acceso por la API.
+1. ~~**Autenticación y permisos.**~~ Resuelto el 17 de octubre de 2026: login,
+   middleware, roles `admin`/`editor`/`viewer` y RLS cerrada. Ver
+   [Seguridad y acceso](#seguridad-y-acceso).
+2. ~~**Secretos de integraciones.**~~ Resuelto el 17 de octubre de 2026: los secretos
+   viven en `integration_secrets`, sin acceso desde el navegador.
 3. **Edición de captura.** La vista individual permite revisar datos y crear un
    borrador con imágenes, identificadores y SKU. Queda por implementar la corrección
    de campos antes de la conversión.
@@ -119,20 +124,90 @@ Copia obtenida de `sevegeto/2Catalogo_IA`, rama `main`, commit inicial `e726e2e`
 5. **Worker Fedora/Ollama.** Hay una prueba HTTP de `/api/tags`, pero no un worker
    que consuma trabajos. `localhost` desde Supabase apunta al servidor de Supabase,
    no al equipo Fedora. Preferir un worker local que consulte la cola con permisos
-   limitados. La función actual también necesita limitar destinos y validar
-   solicitudes antes de desplegarla.
+   limitados. La función `test-ollama` ya exige admin y valida destinos.
 6. **Inventario y variantes.** Completar altas/edición y movimientos con balances
    consistentes, validación y auditoría. Hay varias acciones demo que solo esperan
    y regresan sin modificar datos.
 7. **Integraciones.** Mercado Libre, Sheets y Drive tienen formularios de
    configuración, pero no sincronización implementada. Activar una configuración
    no demuestra conectividad real.
-8. **Calidad y mantenimiento.** Incorporar pruebas de los flujos críticos, manejo
-   visible de errores de guardado y actualización planificada de dependencias.
+8. **Calidad y mantenimiento.** Ampliar pruebas de flujos críticos, manejo visible
+   de errores de guardado en el resto de pantallas, ocultar acciones de edición a
+   `viewer` y actualización planificada de dependencias.
    Quedan avisos de lint sobre imágenes y una dependencia de un efecto de React.
 
 La conexión a una instancia real, las migraciones remotas, la extracción en Chrome,
 las integraciones y los jobs necesitan verificarse con sus entornos respectivos.
+
+## Seguridad y acceso
+
+Implementado el 17 de octubre de 2026 (rama `feature/seguridad-auth-rls`).
+
+### Roles
+
+| Rol | Puede |
+| --- | --- |
+| `viewer` | Leer catálogo, capturas, inventario, publicaciones e integraciones (sin secretos). |
+| `editor` | Lo anterior, más altas, ediciones y bajas del catálogo, capturas, coincidencias, inventario y trabajos. |
+| `admin` | Todo lo anterior, más configuración, integraciones, credenciales, cuentas de marketplace, usuarios y auditoría. |
+
+- `anon` (sin sesión) no tiene acceso a ninguna tabla ni función.
+- Un usuario autenticado sin fila en `user_roles` no ve nada y la app le muestra un aviso.
+- `audit_logs` solo admite inserciones (con el propio `user_id`); nadie la edita ni la borra por la API.
+- `captures.captured_by` lo fija la base con `auth.uid()`.
+- Siempre debe quedar al menos un `admin`.
+
+### Credenciales de integraciones
+
+- Se guardan en `integration_secrets`, con RLS y sin permisos para `anon` ni
+  `authenticated`: solo `service_role` (Edge Functions o un worker) puede leerlas.
+- La pantalla Configuración solo envía valores nuevos mediante
+  `set_integration_secrets` (admin). Muestra qué campos están guardados, nunca su valor.
+- Cada cambio queda en auditoría con los nombres de los campos, sin valores.
+- `clientId`, `sellerId` y `serviceAccountEmail` no son secretos y viven en `settings`.
+
+### Activar en Supabase (en este orden)
+
+1. Si aún no lo hiciste, aplica `20261014140000_promote_capture.sql` y
+   `20261014141000_capture_matching.sql`.
+2. Aplica `supabase/migrations/20261017210000_auth_roles_rls.sql`.
+3. Aplica `supabase/migrations/20261017211000_integration_secrets.sql`. Migra las
+   credenciales existentes y elimina la columna `credentials`.
+4. En **Authentication → Providers → Email**, desactiva *Allow new users to sign up*.
+5. Crea tu usuario en **Authentication → Users → Add user** (marca *Auto Confirm User*).
+6. Asígnate el rol en el **SQL Editor**:
+
+   ```sql
+   INSERT INTO public.user_roles (user_id, role, display_name)
+   SELECT id, 'admin', 'Sergio' FROM auth.users WHERE email = 'tu-correo@dominio.com';
+   ```
+
+   Para otros usuarios usa `'editor'` o `'viewer'`.
+7. En **Authentication → URL Configuration**, agrega la URL del sitio y
+   `https://TU-SITIO/auth/reset-password` en *Redirect URLs*.
+8. Si usas la prueba del worker, vuelve a desplegar la función:
+   `supabase functions deploy test-ollama`.
+9. Vuelve a compilar y desplegar la app. Recarga la extensión Chrome (versión 1.1.0)
+   e inicia sesión en ella.
+
+Hasta aplicar los pasos 2 y 3, la base sigue con las políticas abiertas anteriores.
+Después de aplicarlos, cualquier versión anterior de la app o de la extensión que use
+solo la clave anon dejará de poder leer o escribir.
+
+### Verificación
+
+- `npm test`: 15 pruebas correctas (7 de capturas/matching/demo y 8 de permisos:
+  anon, sin rol, viewer, editor, auditoría, secretos, migración de credenciales y roles).
+- `npm run typecheck` y `npm run lint`: correctos (quedan los avisos previos de `<img>`
+  y de un efecto en `matches/[id]`).
+- `npm run build`: correcto, 21 páginas y middleware.
+- Servidor de producción configurado como Live: `/dashboard` y `/products?q=x` sin
+  sesión redirigen a `/auth/login?next=…`; las páginas `/auth/*` responden 200; con la
+  cookie de demo, `/dashboard` responde 200; una cookie de sesión falsa no da acceso.
+- Lógica de sesión de la extensión probada con un simulador: rechaza URL no HTTPS,
+  no guarda la contraseña, renueva el token al expirar o ante 401 y descarta la sesión
+  al cambiar de proyecto.
+- No se verificó contra una instancia real de Supabase ni en Chrome real.
 
 ## Flujo de capturas implementado
 
